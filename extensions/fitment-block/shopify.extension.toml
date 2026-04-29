@@ -1,0 +1,11 @@
+api_version = "2026-04"
+uid = "9a4028ec-58ee-b9a9-4272-5af94c3dadc46a1a0b87"
+
+[[extensions]]
+type = "ui_extension"
+name = "Fitment Block"
+handle = "fitment-block"
+
+[[extensions.targeting]]
+module = "./src/FitmentBlock.tsx"
+target = "admin.product-details.block.render"

@@ -1,0 +1,21 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "899b3c3bdccaf50ed2ca00191f66fa45"
+name = "Fitment Manager"
+application_url = "https://fitment-manager.oceancarparts.com"
+embedded = true
+
+[webhooks]
+api_version = "2026-04"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_metaobject_definitions,write_metaobject_definitions,read_metaobjects,write_metaobjects,read_products,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://fitment-manager.oceancarparts.com/auth/callback",
+  "https://fitment-manager.oceancarparts.com/auth/shopify/callback"
+]
