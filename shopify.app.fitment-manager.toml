@@ -1,21 +1,24 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "899b3c3bdccaf50ed2ca00191f66fa45"
+client_id = "2235978ef56dbb720721a7988a9a2cde"
 name = "Fitment Manager"
-application_url = "https://fitment-manager.oceancarparts.com"
+application_url = "https://fitment-manager.vercel.app"
 embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
 
 [webhooks]
 api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_metaobject_definitions,write_metaobject_definitions,read_metaobjects,write_metaobjects,read_products,write_products"
+scopes = "read_metaobjects,read_products,write_products"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://fitment-manager.oceancarparts.com/auth/callback",
-  "https://fitment-manager.oceancarparts.com/auth/shopify/callback"
+  "https://fitment-manager.vercel.app/auth/callback",
+  "https://fitment-manager.vercel.app/auth/shopify/callback"
 ]

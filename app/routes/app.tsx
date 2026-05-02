@@ -1,47 +1,31 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { Outlet, useLocation, useNavigate } from "@remix-run/react";
-import { Frame, Navigation, TopBar } from "@shopify/polaris";
+import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Outlet, useLoaderData } from "@remix-run/react";
+import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { authenticate } from "../shopify.server";
 
+export const headers: HeadersFunction = (headersArgs) => {
+  return headersArgs.loaderHeaders;
+};
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+
+  return json({
+    apiKey: process.env.SHOPIFY_API_KEY ?? "",
+    shop: session.shop,
+  });
 }
 
-export default function AppLayout() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const navItems = [
-    {
-      label: "Products Fitment",
-      url: "/app/products",
-    },
-    {
-      label: "Bulk import (CSV)",
-      url: "/app/import",
-    },
-  ];
-
-  const navigationMarkup = (
-    <Navigation location={location.pathname}>
-      <Navigation.Section
-        items={navItems.map((it) => ({
-          label: it.label,
-          url: it.url,
-          selected: location.pathname === it.url || location.pathname.startsWith(it.url + "/"),
-          onClick: () => navigate(it.url),
-        }))}
-      />
-    </Navigation>
-  );
-
-  const topBarMarkup = <TopBar showNavigationToggle={false} />;
-
+export default function App() {
+  const { apiKey } = useLoaderData<typeof loader>();
   return (
-    <Frame topBar={topBarMarkup} navigation={navigationMarkup}>
+    <AppProvider
+      apiKey={apiKey}
+      isEmbeddedApp
+    >
       <Outlet />
-    </Frame>
+    </AppProvider>
   );
 }
 

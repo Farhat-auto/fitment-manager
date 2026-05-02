@@ -1,4 +1,7 @@
 .env
+.env.vercel.production
+.shopify-admin-token
+.backfill-fitment-keys.checkpoint.json
 node_modules/
 build/
 .cache/
@@ -9,3 +12,4 @@ yarn-error.log*
 pnpm-debug.log*
 *.local
 fitment-manager/
+.vercel

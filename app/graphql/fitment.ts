@@ -1,7 +1,7 @@
 /**
  * Admin GraphQL operations for Fitment Manager.
  *
- * Metafield: custom.compatible_vehicles (type: list.metaobject_reference)
+ * Metafield: fitment.vehicles (type: list.metaobject_reference)
  * Metaobject type: vehicle
  */
 
@@ -11,57 +11,32 @@ export const GET_PRODUCT_FITMENT = `#graphql
       id
       title
       handle
-      compatibleVehicles: metafield(namespace: "custom", key: "compatible_vehicles") {
+      category: metafield(namespace: "custom", key: "catalog_main_category") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
+      systemGroup: metafield(namespace: "custom", key: "catalog_system_group") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
+      subcategory: metafield(namespace: "custom", key: "catalog_subcategory") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
+      fitmentVehicles: metafield(namespace: "fitment", key: "vehicles") {
         id
         namespace
         key
         type
         value
         references(first: $refsFirst) {
-          totalCount
           nodes {
             ... on Metaobject {
               id
               handle
               type
-
               vehicle_key: field(key: "vehicle_key") { value }
               display_name: field(key: "display_name") { value }
-              engine_code: field(key: "engine_code") { value }
-              power_kw: field(key: "power_kw") { value }
-              power_hp: field(key: "power_hp") { value }
-              body_type: field(key: "body_type") { value }
-              year_from: field(key: "year_from") { value }
-              year_to: field(key: "year_to") { value }
-              fuel_type: field(key: "fuel_type") { value }
-
-              make: field(key: "make") {
-                reference {
-                  ... on Metaobject {
-                    id
-                    handle
-                    name: field(key: "display_name") { value }
-                  }
-                }
-              }
-              model: field(key: "model") {
-                reference {
-                  ... on Metaobject {
-                    id
-                    handle
-                    name: field(key: "display_name") { value }
-                  }
-                }
-              }
-              series: field(key: "series") {
-                reference {
-                  ... on Metaobject {
-                    id
-                    handle
-                    name: field(key: "display_name") { value }
-                  }
-                }
-              }
             }
           }
         }
@@ -72,29 +47,72 @@ export const GET_PRODUCT_FITMENT = `#graphql
 
 export const SEARCH_VEHICLES = `#graphql
   query SearchVehicles($first: Int! = 50, $after: String, $query: String) {
-    metaobjectsByType(type: "vehicle", first: $first, after: $after, query: $query) {
+    metaobjects(type: "vehicle", first: $first, after: $after, query: $query) {
       pageInfo {
         hasNextPage
         endCursor
       }
       nodes {
         id
+        type
         handle
-        vehicle_key: field(key: "vehicle_key") { value }
-        display_name: field(key: "display_name") { value }
+        displayName
+        fields {
+          key
+          value
+          reference {
+            ... on Metaobject {
+              id
+              type
+              displayName
+              name: field(key: "name") { value }
+              display_name: field(key: "display_name") { value }
+            }
+          }
+        }
       }
     }
   }
 `;
 
-export const SET_COMPATIBLE_VEHICLES = `#graphql
-  mutation SetCompatibleVehicles($ownerId: ID!, $value: String!) {
+export const LIST_METAOBJECTS_BY_TYPE = `#graphql
+  query ListMetaobjectsByType($type: String!, $first: Int! = 250, $after: String) {
+    metaobjects(type: $type, first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        type
+        handle
+        displayName
+        fields {
+          key
+          value
+          reference {
+            ... on Metaobject {
+              id
+              type
+              displayName
+              name: field(key: "name") { value }
+              display_name: field(key: "display_name") { value }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const SET_FITMENT_VEHICLES = `#graphql
+  mutation SetFitmentVehicles($ownerId: ID!, $value: String!) {
     metafieldsSet(
       metafields: [
         {
           ownerId: $ownerId
-          namespace: "custom"
-          key: "compatible_vehicles"
+          namespace: "fitment"
+          key: "vehicles"
           type: "list.metaobject_reference"
           value: $value
         }
@@ -160,6 +178,7 @@ export const GET_PRODUCTS_FOR_FITMENT_ADMIN = `#graphql
       nodes {
         id
         title
+        vendor
         handle
         featuredImage {
           url
@@ -172,6 +191,43 @@ export const GET_PRODUCTS_FOR_FITMENT_ADMIN = `#graphql
         }
         article_number: metafield(namespace: "custom", key: "article_number") { value }
         brand: metafield(namespace: "custom", key: "brand") { value }
+        fitment: metafield(namespace: "fitment", key: "vehicles") {
+          value
+          jsonValue
+        }
+        category: metafield(namespace: "custom", key: "catalog_main_category") {
+          value
+          reference { ... on Metaobject { id displayName } }
+        }
+        systemGroup: metafield(namespace: "custom", key: "catalog_system_group") {
+          value
+          reference { ... on Metaobject { id displayName } }
+        }
+        subcategory: metafield(namespace: "custom", key: "catalog_subcategory") {
+          value
+          reference { ... on Metaobject { id displayName } }
+        }
+        oe_references: metafield(namespace: "custom", key: "oe_references") {
+          type
+          value
+          jsonValue
+        }
+        cross_references: metafield(namespace: "custom", key: "cross_references") {
+          type
+          value
+          jsonValue
+        }
+        brand_reference: metafield(namespace: "custom", key: "brand_reference") {
+          reference {
+            ... on Metaobject {
+              id
+              displayName
+            }
+          }
+        }
+        search_index: metafield(namespace: "custom", key: "search_index") {
+          value
+        }
       }
     }
   }

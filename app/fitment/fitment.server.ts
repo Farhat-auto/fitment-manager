@@ -31,7 +31,9 @@ export function resolveShopDomain(request: Request): string | null {
     url.searchParams.get("shop") ??
     url.searchParams.get("shopDomain");
   const header = request.headers.get("x-shopify-shop-domain");
-  return qp ?? header ?? process.env.SHOP_DOMAIN ?? null;
+  // Prefer request-derived shop. Only fall back to an explicit store domain env var
+  // (useful for local scripts), never to a stale/default shop.
+  return qp ?? header ?? process.env.SHOPIFY_STORE_DOMAIN ?? null;
 }
 
 export async function getProductHandlesByVehicle(params: {

@@ -48,8 +48,8 @@ function FitmentBlock() {
   const manageUrl = useMemo(() => {
     const numericId = extractNumericProductId(productId);
     return numericId
-      ? `/admin/apps/fitment-manager-2#product=${encodeURIComponent(numericId)}`
-      : `/admin/apps/fitment-manager-2`;
+      ? `/apps/fitment-manager-2/app/products/${encodeURIComponent(numericId)}`
+      : `/apps/fitment-manager-2/app/products`;
   }, [productId]);
 
   const count = vehicles.length;
@@ -142,7 +142,14 @@ function FitmentBlock() {
           <Badge tone={count ? "success" : "subdued"}>{count} vehicles</Badge>
         </InlineStack>
         <InlineStack gap="base" blockAlign="center">
-          <Link to={manageUrl}>Manage Fitment</Link>
+          <Link
+            to={manageUrl}
+            onPress={() => {
+              console.log("Edit Fitment clicked", productId, (api as any)?.data?.product?.title);
+            }}
+          >
+            Edit Fitment
+          </Link>
           <Button
             kind="secondary"
             onPress={toggle}

@@ -3,12 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev:shopify": "node scripts/shopify-dev.mjs",
     "dev": "remix vite:dev",
     "build": "remix vite:build",
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:test-fitment": "node scripts/seed-test-fitment.mjs",
-    "sync:fitment": "node scripts/sync-fitment.mjs"
+    "sync:fitment": "node scripts/sync-fitment.mjs",
+    "backfill:search-index": "node scripts/backfill-search-index.mjs",
+    "backfill:fitment-keys": "node scripts/backfill-fitment-keys.mjs",
+    "test:oe-normalize": "node scripts/test-oe-search-normalize.mjs",
+    "test:supabase": "node scripts/test-supabase-connection.mjs"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",
@@ -17,8 +22,8 @@
     "@shopify/polaris": "^12.0.0",
     "@shopify/shopify-api": "^11.13.0",
     "@shopify/shopify-app-remix": "^3.6.2",
-    "@shopify/shopify-app-session-storage-memory": "^4.0.2",
     "@supabase/supabase-js": "^2.49.1",
+    "@vercel/remix": "^2.16.7",
     "dotenv": "^17.4.2",
     "isbot": "^5.1.11",
     "react": "^18.3.1",

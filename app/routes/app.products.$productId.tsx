@@ -1,47 +1,20 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import {
-  Form,
-  useFetcher,
-  useLoaderData,
-  useNavigation,
-  useParams,
-} from "@remix-run/react";
+import { json, redirect } from "@remix-run/node";
+import { Form, useLoaderData, useLocation, useNavigate, useNavigation } from "@remix-run/react";
 import {
   Page,
   Card,
   BlockStack,
-  ResourceList,
-  ResourceItem,
   Text,
   Button,
   TextField,
+  FormLayout,
   InlineStack,
-  ContextualSaveBar,
-  Divider,
-  Banner,
-  EmptyState,
+  IndexTable,
+  Thumbnail,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
-import {
-  GET_PRODUCT_FITMENT,
-  SEARCH_VEHICLES,
-  SET_COMPATIBLE_VEHICLES,
-} from "../graphql/fitment";
-
-type VehicleNode = {
-  id: string;
-  handle: string;
-  vehicle_key?: { value?: string | null } | null;
-  display_name?: { value?: string | null } | null;
-  engine_code?: { value?: string | null } | null;
-  power_kw?: { value?: string | null } | null;
-  power_hp?: { value?: string | null } | null;
-  body_type?: { value?: string | null } | null;
-  year_from?: { value?: string | null } | null;
-  year_to?: { value?: string | null } | null;
-  fuel_type?: { value?: string | null } | null;
-};
+import { getSupabaseAdmin } from "../supabase.server";
 
 function normalizeProductId(raw: string): string {
   const value = String(raw || "").trim();
@@ -54,406 +27,293 @@ function normalizeProductId(raw: string): string {
   }
 }
 
-function fieldValue(x: any): string {
-  const v = x?.value;
+function toShopifyProductGid(rawProductId: string): { gid: string; numericId: string } {
+  const raw = String(rawProductId || "").trim();
+  if (!raw) return { gid: "", numericId: "" };
+
+  if (raw.startsWith("gid://shopify/Product/")) {
+    const numericId = raw.split("/").pop() || "";
+    return { gid: raw, numericId };
+  }
+
+  return { gid: `gid://shopify/Product/${raw}`, numericId: raw };
+}
+
+type FitmentRow = {
+  id: string;
+  shop: string;
+  product_id: string;
+  product_title: string | null;
+  make: string;
+  model: string;
+  year_from: number | null;
+  year_to: number | null;
+  engine: string | null;
+  variant: string | null;
+  body_type: string | null;
+  created_at: string;
+};
+
+const GET_PRODUCT_BASIC = `#graphql
+  query ProductBasic($id: ID!) {
+    product(id: $id) {
+      id
+      title
+      featuredImage {
+        url
+        altText
+      }
+    }
+  }
+`;
+
+function parseIntOrNull(v: FormDataEntryValue | null): number | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function str(v: FormDataEntryValue | null): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-function vehicleLabel(v: VehicleNode): string {
-  return (
-    fieldValue(v.display_name) ||
-    fieldValue(v.vehicle_key) ||
-    (v.handle ? String(v.handle) : "") ||
-    (v.id ? String(v.id) : "")
-  );
-}
-
-function normalizeLines(text: string): string[] {
-  return String(text || "")
-    .split(/\r?\n/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
-  const productId = normalizeProductId(params.productId ?? "");
-  if (!productId) throw new Response("Missing productId", { status: 400 });
+  let admin;
+  let session;
 
-  const resp = await admin.graphql(GET_PRODUCT_FITMENT, {
-    variables: { id: productId, refsFirst: 250 },
-  });
-  const data = await resp.json();
-  const p = data?.data?.product;
-  if (!p) throw new Response("Product not found", { status: 404 });
+  try {
+    const auth = await authenticate.admin(request);
+    admin = auth.admin;
+    session = auth.session;
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    throw error;
+  }
 
-  const refs = p?.compatibleVehicles?.references;
-  const vehicles: VehicleNode[] = Array.isArray(refs?.nodes) ? refs.nodes : [];
+  const rawProductId = params.productId ?? "";
+  const decodedProductId = normalizeProductId(rawProductId);
+  const { gid: shopifyProductGid, numericId } = toShopifyProductGid(decodedProductId);
+  try {
+    console.error("PRODUCT_LOOKUP_DEBUG", {
+      rawProductId,
+      decodedProductId,
+      shopifyProductGid,
+      shop: session.shop,
+    });
 
-  return json({
-    product: {
-      id: String(p.id),
-      title: String(p.title ?? ""),
-      handle: String(p.handle ?? ""),
-    },
-    assignedVehicles: vehicles.map((v: any) => ({
-      id: String(v.id),
-      handle: String(v.handle ?? ""),
-      vehicle_key: v.vehicle_key ?? null,
-      display_name: v.display_name ?? null,
-      engine_code: v.engine_code ?? null,
-      power_kw: v.power_kw ?? null,
-      power_hp: v.power_hp ?? null,
-      body_type: v.body_type ?? null,
-      year_from: v.year_from ?? null,
-      year_to: v.year_to ?? null,
-      fuel_type: v.fuel_type ?? null,
-    })),
-  });
+    if (!decodedProductId) throw new Response("Missing productId", { status: 400 });
+    if (!shopifyProductGid || !numericId || !/^\d+$/.test(numericId)) {
+      throw new Response("Invalid productId (expected numeric product ID)", { status: 404 });
+    }
+
+    const shop = String(session.shop || "").trim();
+    if (!shop) throw new Response("Missing shop", { status: 400 });
+
+    const resp = await admin.graphql(GET_PRODUCT_BASIC, {
+      variables: { id: shopifyProductGid },
+    });
+    const gql = await resp.json();
+    const p = gql?.data?.product;
+    if (!p) throw new Response("Product not found", { status: 404 });
+
+    const supabase = getSupabaseAdmin();
+    const { data: fitments, error } = await supabase
+      .from("fitments")
+      .select(
+        "id,shop,product_id,product_title,make,model,year_from,year_to,engine,variant,body_type,created_at",
+      )
+      .eq("shop", shop)
+      .eq("product_id", shopifyProductGid)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Response(error.message, { status: 500 });
+    }
+
+    return json({
+      product: {
+        id: String(p.id),
+        title: String(p.title ?? ""),
+        featuredImageUrl: String(p.featuredImage?.url ?? ""),
+        featuredImageAlt: String(p.featuredImage?.altText ?? p.title ?? ""),
+      },
+      fitments: (fitments ?? []) as FitmentRow[],
+    });
+  } catch (error) {
+    console.error("FITMENT_PRODUCT_ROUTE_ERROR", {
+      productIdParam: rawProductId,
+      decodedProductId,
+      shopifyProductGid,
+      numericId,
+      error,
+    });
+    throw error;
+  }
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
-  const productId = normalizeProductId(params.productId ?? "");
-  if (!productId) return json({ ok: false, error: "Missing productId" }, { status: 400 });
+  const rawProductId = params.productId ?? "";
+  const decodedProductId = normalizeProductId(rawProductId);
+  const { gid: shopifyProductGid, numericId } = toShopifyProductGid(decodedProductId);
+  try {
+    const { session } = await authenticate.admin(request);
 
-  const fd = await request.formData();
-  const intent = String(fd.get("_intent") || "save").trim();
-
-  if (intent === "search") {
-    const q = String(fd.get("q") || "").trim();
-    const after = fd.get("after") ? String(fd.get("after")) : null;
-    const resp = await admin.graphql(SEARCH_VEHICLES, {
-      variables: {
-        first: 50,
-        after,
-        query: q || null,
-      },
-    });
-    const data = await resp.json();
-    const mo = data?.data?.metaobjectsByType;
-    const nodes = Array.isArray(mo?.nodes) ? mo.nodes : [];
-    return json({
-      ok: true,
-      pageInfo: mo?.pageInfo ?? { hasNextPage: false, endCursor: null },
-      vehicles: nodes.map((n: any) => ({
-        id: String(n.id),
-        handle: String(n.handle ?? ""),
-        vehicle_key: n.vehicle_key ?? null,
-        display_name: n.display_name ?? null,
-      })),
-    });
-  }
-
-  if (intent === "resolve_bulk") {
-    const raw = String(fd.get("bulk") || "");
-    const keys = normalizeLines(raw).slice(0, 500);
-    const uniq: string[] = [];
-    const seen = new Set<string>();
-    for (const k of keys) {
-      const low = k.toLowerCase();
-      if (seen.has(low)) continue;
-      seen.add(low);
-      uniq.push(k);
+    if (!decodedProductId) throw new Response("Missing productId", { status: 400 });
+    if (!shopifyProductGid || !numericId || !/^\d+$/.test(numericId)) {
+      return json({ ok: false, error: "Invalid productId (expected numeric product ID)" }, { status: 404 });
     }
 
-    // Resolve by querying metaobjectsByType with the key as the query string.
-    // (Shopify query syntax varies per shop; we do best-effort here.)
-    const resolved: Array<{ key: string; matches: Array<{ id: string; handle: string; display_name: any; vehicle_key: any }> }> = [];
-    for (const k of uniq.slice(0, 120)) {
-      const resp = await admin.graphql(SEARCH_VEHICLES, {
-        variables: { first: 10, after: null, query: k },
-      });
-      const data = await resp.json();
-      const nodes = Array.isArray(data?.data?.metaobjectsByType?.nodes)
-        ? data.data.metaobjectsByType.nodes
-        : [];
-      resolved.push({
-        key: k,
-        matches: nodes.map((n: any) => ({
-          id: String(n.id),
-          handle: String(n.handle ?? ""),
-          display_name: n.display_name ?? null,
-          vehicle_key: n.vehicle_key ?? null,
-        })),
-      });
+    const fd = await request.formData();
+
+    const shop = String(session.shop || "").trim();
+    if (!shop) throw new Response("Missing shop", { status: 400 });
+    const make = str(fd.get("make"));
+    const model = str(fd.get("model"));
+    const year_from = parseIntOrNull(fd.get("year_from"));
+    const year_to = parseIntOrNull(fd.get("year_to"));
+    const engine = str(fd.get("engine")) || null;
+    const variant = str(fd.get("variant")) || null;
+    const body_type = str(fd.get("body_type")) || null;
+
+    if (!make || !model) {
+      return json(
+        { ok: false, error: "make and model are required" },
+        { status: 400 },
+      );
     }
 
-    return json({ ok: true, resolved });
-  }
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("fitments").insert({
+      shop,
+      product_id: shopifyProductGid,
+      make,
+      model,
+      year_from,
+      year_to,
+      engine,
+      variant,
+      body_type,
+    });
 
-  // Save
-  const value = String(fd.get("value") || "").trim();
-  const resp = await admin.graphql(SET_COMPATIBLE_VEHICLES, {
-    variables: { ownerId: productId, value },
-  });
-  const data = await resp.json();
-  const errs = data?.data?.metafieldsSet?.userErrors ?? [];
-  if (Array.isArray(errs) && errs.length) {
-    return json({ ok: false, userErrors: errs }, { status: 400 });
+    if (error) {
+      return json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    const url = new URL(request.url);
+    return redirect(`/app/products/${encodeURIComponent(numericId)}${url.search}`);
+  } catch (error) {
+    console.error("FITMENT_PRODUCT_ROUTE_ERROR", {
+      productIdParam: rawProductId,
+      decodedProductId,
+      shopifyProductGid,
+      numericId,
+      error,
+    });
+    throw error;
   }
-  return json({ ok: true });
 }
 
 export default function ProductFitment() {
-  const { product, assignedVehicles } = useLoaderData<typeof loader>();
-  const params = useParams();
+  const { product, fitments } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
-
-  const searchFetcher = useFetcher<typeof action>();
-  const bulkFetcher = useFetcher<typeof action>();
-  const saveFetcher = useFetcher<typeof action>();
-
-  const [assigned, setAssigned] = React.useState<VehicleNode[]>(assignedVehicles as any);
-  const [search, setSearch] = React.useState("");
-  const [bulk, setBulk] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-
-  const isSaving = saveFetcher.state !== "idle" || navigation.state !== "idle";
-  const initialIds = React.useMemo(() => (assignedVehicles as any[]).map((v) => String(v.id)).sort(), [assignedVehicles]);
-  const currentIds = React.useMemo(() => assigned.map((v) => String(v.id)).sort(), [assigned]);
-  const dirty = React.useMemo(() => initialIds.join("|") !== currentIds.join("|"), [initialIds, currentIds]);
-
-  const assignedIdSet = React.useMemo(() => new Set(assigned.map((v) => String(v.id))), [assigned]);
-
-  function removeVehicle(id: string) {
-    setAssigned((prev) => prev.filter((v) => String(v.id) !== String(id)));
-  }
-
-  function addVehicle(v: any) {
-    const id = String(v.id);
-    if (assignedIdSet.has(id)) return;
-    setAssigned((prev) => [...prev, v]);
-  }
-
-  function submitSearch(q: string) {
-    const fd = new FormData();
-    fd.set("_intent", "search");
-    fd.set("q", q);
-    searchFetcher.submit(fd, { method: "post" });
-  }
-
-  function resolveBulk() {
-    const fd = new FormData();
-    fd.set("_intent", "resolve_bulk");
-    fd.set("bulk", bulk);
-    bulkFetcher.submit(fd, { method: "post" });
-  }
-
-  function save() {
-    setError(null);
-    const gids = assigned.map((v) => String(v.id));
-    const fd = new FormData();
-    fd.set("_intent", "save");
-    fd.set("value", JSON.stringify(gids));
-    saveFetcher.submit(fd, { method: "post" });
-  }
-
-  React.useEffect(() => {
-    const u = (saveFetcher.data as any)?.userErrors;
-    if (Array.isArray(u) && u.length) {
-      setError(String(u[0]?.message || "Failed to save"));
-    }
-  }, [saveFetcher.data]);
-
-  const searchResults: any[] =
-    (searchFetcher.data as any)?.vehicles && Array.isArray((searchFetcher.data as any).vehicles)
-      ? ((searchFetcher.data as any).vehicles as any[])
-      : [];
-
-  const bulkResolved: any[] =
-    (bulkFetcher.data as any)?.resolved && Array.isArray((bulkFetcher.data as any).resolved)
-      ? ((bulkFetcher.data as any).resolved as any[])
-      : [];
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isSubmitting = navigation.state !== "idle";
 
   return (
     <Page
-      title={`${product.title} — Fitment Management`}
-      backAction={{ content: "Products", url: "/app/products" }}
+      title={`${product.title} — Fitment`}
+      backAction={{
+        content: "Back to Products",
+        onAction: () => navigate(`/app/products${location.search || ""}`),
+      }}
     >
-      {dirty ? (
-        <ContextualSaveBar
-          message="Unsaved changes"
-          saveAction={{ content: "Save", onAction: save, loading: isSaving, disabled: isSaving }}
-          discardAction={{
-            content: "Discard",
-            onAction: () => setAssigned(assignedVehicles as any),
-            disabled: isSaving,
-          }}
-        />
-      ) : null}
-
       <BlockStack gap="400">
-        {error ? (
-          <Banner tone="critical" title="Save failed">
-            <p>{error}</p>
-          </Banner>
-        ) : null}
-
         <Card>
-          <BlockStack gap="300">
-            <Text as="h2" variant="headingMd">
-              Assigned Vehicles ({assigned.length})
-            </Text>
-            {assigned.length ? (
-              <ResourceList
-                items={assigned}
-                renderItem={(item: any) => {
-                  const id = String(item.id);
-                  return (
-                    <ResourceItem id={id} onClick={() => {}}>
-                      <InlineStack align="space-between" blockAlign="center">
-                        <Text as="span" variant="bodyMd">
-                          {vehicleLabel(item)}
-                        </Text>
-                        <Button tone="critical" onClick={() => removeVehicle(id)}>
-                          Remove
-                        </Button>
-                      </InlineStack>
-                    </ResourceItem>
-                  );
-                }}
-              />
-            ) : (
-              <EmptyState
-                heading="No vehicles assigned"
-                action={{ content: "Search vehicles below" }}
-                image="https://cdn.shopify.com/static/images/admin/empty-state-illustrations/search.svg"
-              >
-                <p>Add vehicles to control fitment for this product.</p>
-              </EmptyState>
-            )}
-          </BlockStack>
-        </Card>
-
-        <Card>
-          <BlockStack gap="300">
-            <Text as="h2" variant="headingMd">
-              Add Vehicles
-            </Text>
-            <TextField
-              label="Search"
-              value={search}
-              onChange={(v) => setSearch(v)}
-              autoComplete="off"
-              placeholder="Search by display name or vehicle_key"
-              connectedRight={
-                <Button onClick={() => submitSearch(search)} loading={searchFetcher.state !== "idle"}>
-                  Search
-                </Button>
+          <InlineStack gap="300" blockAlign="center">
+            <Thumbnail
+              source={
+                product.featuredImageUrl ||
+                "https://cdn.shopify.com/static/images/placeholders/product-1.png"
               }
+              alt={product.featuredImageAlt}
+              size="medium"
             />
-            {searchResults.length ? (
-              <ResourceList
-                items={searchResults.filter((x) => !assignedIdSet.has(String(x.id)))}
-                renderItem={(item: any) => {
-                  const id = String(item.id);
-                  return (
-                    <ResourceItem id={id} onClick={() => {}}>
-                      <InlineStack align="space-between" blockAlign="center">
-                        <Text as="span" variant="bodyMd">
-                          {vehicleLabel(item)}
-                        </Text>
-                        <Button onClick={() => addVehicle(item)}>Add</Button>
-                      </InlineStack>
-                    </ResourceItem>
-                  );
-                }}
-              />
-            ) : (
-              <Text as="p" variant="bodyMd" tone="subdued">
-                Search to see vehicles.
+            <BlockStack gap="100">
+              <Text as="h2" variant="headingMd">
+                {product.title}
               </Text>
-            )}
-          </BlockStack>
+              <Text as="p" variant="bodySm" tone="subdued">
+                {product.id}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+        </Card>
+
+        <Card>
+          <Form method="post">
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">
+                Add fitment
+              </Text>
+              <FormLayout>
+                <FormLayout.Group>
+                  <TextField name="make" label="Make" autoComplete="off" requiredIndicator />
+                  <TextField name="model" label="Model" autoComplete="off" requiredIndicator />
+                </FormLayout.Group>
+                <FormLayout.Group>
+                  <TextField name="year_from" label="Year from" type="number" autoComplete="off" />
+                  <TextField name="year_to" label="Year to" type="number" autoComplete="off" />
+                </FormLayout.Group>
+                <FormLayout.Group>
+                  <TextField name="engine" label="Engine" autoComplete="off" />
+                  <TextField name="variant" label="Variant" autoComplete="off" />
+                  <TextField name="body_type" label="Body type" autoComplete="off" />
+                </FormLayout.Group>
+              </FormLayout>
+              <InlineStack align="end">
+                <Button submit variant="primary" loading={isSubmitting}>
+                  Save fitment
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </Form>
         </Card>
 
         <Card>
           <BlockStack gap="300">
             <Text as="h2" variant="headingMd">
-              Bulk Add
+              Existing fitments ({fitments.length})
             </Text>
-            <TextField
-              label="Paste vehicle_key values (one per line)"
-              value={bulk}
-              onChange={(v) => setBulk(v)}
-              autoComplete="off"
-              multiline={6}
-              placeholder="bmw-x6-e71-e72-xdrive35i-n54-n55-225-kw-306-hp-..."
-            />
-            <InlineStack gap="200">
-              <Button onClick={resolveBulk} loading={bulkFetcher.state !== "idle"}>
-                Resolve &amp; Add
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setBulk("");
-                }}
-              >
-                Clear
-              </Button>
-            </InlineStack>
-
-            {bulkResolved.length ? (
-              <BlockStack gap="200">
-                <Divider />
-                <Text as="p" variant="bodyMd" tone="subdued">
-                  Resolution results (best-effort). Click Add on the correct match.
-                </Text>
-                <ResourceList
-                  items={bulkResolved}
-                  renderItem={(row: any) => {
-                    const key = String(row.key || "");
-                    const matches: any[] = Array.isArray(row.matches) ? row.matches : [];
-                    return (
-                      <ResourceItem id={key} onClick={() => {}}>
-                        <BlockStack gap="150">
-                          <Text as="p" variant="bodyMd" fontWeight="semibold">
-                            {key}
-                          </Text>
-                          {matches.length ? (
-                            <ResourceList
-                              items={matches.filter((m) => !assignedIdSet.has(String(m.id)))}
-                              renderItem={(m: any) => {
-                                const id = String(m.id);
-                                return (
-                                  <ResourceItem id={id} onClick={() => {}}>
-                                    <InlineStack align="space-between" blockAlign="center">
-                                      <Text as="span" variant="bodyMd">
-                                        {vehicleLabel(m)}
-                                      </Text>
-                                      <Button onClick={() => addVehicle(m)}>Add</Button>
-                                    </InlineStack>
-                                  </ResourceItem>
-                                );
-                              }}
-                            />
-                          ) : (
-                            <Text as="p" variant="bodyMd" tone="subdued">
-                              No matches found.
-                            </Text>
-                          )}
-                        </BlockStack>
-                      </ResourceItem>
-                    );
-                  }}
-                />
-              </BlockStack>
-            ) : null}
+            <IndexTable
+              itemCount={fitments.length}
+              headings={[
+                { title: "Make" },
+                { title: "Model" },
+                { title: "Years" },
+                { title: "Engine" },
+                { title: "Variant" },
+                { title: "Body type" },
+              ]}
+              selectable={false}
+            >
+              {fitments.map((f, idx) => (
+                <IndexTable.Row id={f.id} key={f.id} position={idx}>
+                  <IndexTable.Cell>{f.make}</IndexTable.Cell>
+                  <IndexTable.Cell>{f.model}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {(f.year_from ?? "—").toString()} - {(f.year_to ?? "—").toString()}
+                  </IndexTable.Cell>
+                  <IndexTable.Cell>{f.engine ?? "—"}</IndexTable.Cell>
+                  <IndexTable.Cell>{f.variant ?? "—"}</IndexTable.Cell>
+                  <IndexTable.Cell>{f.body_type ?? "—"}</IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
           </BlockStack>
         </Card>
-
-        {/* Hidden save form for non-JS fallback (optional) */}
-        <Form method="post" style={{ display: "none" }}>
-          <input type="hidden" name="_intent" value="save" />
-          <input type="hidden" name="value" value={JSON.stringify(assigned.map((v) => v.id))} />
-          <button type="submit">Save</button>
-        </Form>
       </BlockStack>
     </Page>
   );
 }
-
-import * as React from "react";
-

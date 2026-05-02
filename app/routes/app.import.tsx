@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useFetcher } from "@remix-run/react";
+import { useFetcher, useLocation, useNavigate } from "@remix-run/react";
 import * as React from "react";
 import {
   Page,
@@ -16,16 +16,30 @@ import {
   Badge,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
-import { SEARCH_VEHICLES } from "../graphql/fitment";
-import { resolveShopDomain, upsertFitmentRows } from "../fitment/fitment.server";
+import { SEARCH_VEHICLES, SET_FITMENT_VEHICLES } from "../graphql/fitment";
+import { resolveShopDomain } from "../fitment/fitment.server";
 
 type CsvRow = {
+  product_id?: string;
   product_handle?: string;
+  product_sku?: string;
+  product_title?: string;
+  category?: string;
+  system_group?: string;
+  subcategory?: string;
   sku?: string;
   article_number?: string;
   brand?: string;
+  vehicle_gid?: string;
   vehicle_key?: string;
   vehicle_handle?: string;
+  make?: string;
+  model?: string;
+  year_from?: string;
+  year_to?: string;
+  engine?: string;
+  variant?: string;
+  body_type?: string;
   category_key?: string;
   system_group_key?: string;
   subcategory_key?: string;
@@ -35,7 +49,7 @@ type CsvRow = {
 type ValidatedStatus = "ready" | "warning" | "error";
 type ValidatedRow = CsvRow & {
   status: ValidatedStatus;
-  message: string;
+  errors: string[];
   product_id?: string;
   product_handle_resolved?: string;
   vehicle_id?: string;
@@ -125,40 +139,82 @@ function buildPreview(csvText: string): {
   if (!raw.length) return { rows: [], headerOk: false, header: [] };
 
   const header = raw[0].map((h) => str(h).toLowerCase());
+  const idxProductId = header.indexOf("product_id");
   const idxProductHandle = header.indexOf("product_handle");
+  const idxProductSku = header.indexOf("product_sku");
+  const idxProductTitle = header.indexOf("product_title");
   const idxSku = header.indexOf("sku");
   const idxArticle = header.indexOf("article_number");
   const idxBrand = header.indexOf("brand");
+  const idxVehicleGid = header.indexOf("vehicle_gid");
   const idxVehicleKey = header.indexOf("vehicle_key");
   const idxVehicleHandle = header.indexOf("vehicle_handle");
+  const idxMake = header.indexOf("make");
+  const idxModel = header.indexOf("model");
+  const idxYearFrom = header.indexOf("year_from");
+  const idxYearTo = header.indexOf("year_to");
+  const idxEngine = header.indexOf("engine");
+  const idxVariant = header.indexOf("variant");
+  const idxBodyType = header.indexOf("body_type");
+  const idxCategoryLabel = header.indexOf("category");
+  const idxSystemGroupLabel = header.indexOf("system_group");
+  const idxSubcategoryLabel = header.indexOf("subcategory");
   const idxCategory = header.indexOf("category_key");
   const idxGroup = header.indexOf("system_group_key");
   const idxSub = header.indexOf("subcategory_key");
 
   const headerOk =
-    (idxProductHandle !== -1 || idxSku !== -1 || idxArticle !== -1) &&
-    (idxVehicleKey !== -1 || idxVehicleHandle !== -1);
+    (idxProductId !== -1 || idxProductHandle !== -1 || idxProductSku !== -1 || idxSku !== -1 || idxArticle !== -1) &&
+    (idxVehicleGid !== -1 || idxVehicleKey !== -1 || idxVehicleHandle !== -1 || (idxMake !== -1 && idxModel !== -1));
 
   const out: Array<CsvRow & { status: "ok" | "invalid"; error?: string }> = [];
   for (let r = 1; r < raw.length; r++) {
     const cols = raw[r];
+    const product_id = idxProductId !== -1 ? str(cols[idxProductId] ?? "") : "";
     const product_handle = idxProductHandle !== -1 ? str(cols[idxProductHandle] ?? "") : "";
+    const product_sku = idxProductSku !== -1 ? str(cols[idxProductSku] ?? "") : "";
+    const product_title = idxProductTitle !== -1 ? str(cols[idxProductTitle] ?? "") : "";
     const sku = idxSku !== -1 ? str(cols[idxSku] ?? "") : "";
     const article_number = idxArticle !== -1 ? str(cols[idxArticle] ?? "") : "";
     const brand = idxBrand !== -1 ? str(cols[idxBrand] ?? "") : "";
+    const vehicle_gid = idxVehicleGid !== -1 ? str(cols[idxVehicleGid] ?? "") : "";
     const vehicle_key = idxVehicleKey !== -1 ? str(cols[idxVehicleKey] ?? "") : "";
     const vehicle_handle = idxVehicleHandle !== -1 ? str(cols[idxVehicleHandle] ?? "") : "";
+    const make = idxMake !== -1 ? str(cols[idxMake] ?? "") : "";
+    const model = idxModel !== -1 ? str(cols[idxModel] ?? "") : "";
+    const year_from = idxYearFrom !== -1 ? str(cols[idxYearFrom] ?? "") : "";
+    const year_to = idxYearTo !== -1 ? str(cols[idxYearTo] ?? "") : "";
+    const engine = idxEngine !== -1 ? str(cols[idxEngine] ?? "") : "";
+    const variant = idxVariant !== -1 ? str(cols[idxVariant] ?? "") : "";
+    const body_type = idxBodyType !== -1 ? str(cols[idxBodyType] ?? "") : "";
+    const category = idxCategoryLabel !== -1 ? str(cols[idxCategoryLabel] ?? "") : "";
+    const system_group = idxSystemGroupLabel !== -1 ? str(cols[idxSystemGroupLabel] ?? "") : "";
+    const subcategory = idxSubcategoryLabel !== -1 ? str(cols[idxSubcategoryLabel] ?? "") : "";
     const category_key = idxCategory !== -1 ? str(cols[idxCategory] ?? "") : "";
     const system_group_key = idxGroup !== -1 ? str(cols[idxGroup] ?? "") : "";
     const subcategory_key = idxSub !== -1 ? str(cols[idxSub] ?? "") : "";
 
     const base: CsvRow = {
+      product_id: product_id || undefined,
       product_handle: product_handle || undefined,
+      product_sku: product_sku || undefined,
+      product_title: product_title || undefined,
+      category: category || undefined,
+      system_group: system_group || undefined,
+      subcategory: subcategory || undefined,
       sku: sku || undefined,
       article_number: article_number || undefined,
       brand: brand || undefined,
+      vehicle_gid: vehicle_gid || undefined,
       vehicle_key: vehicle_key || undefined,
       vehicle_handle: vehicle_handle || undefined,
+      make: make || undefined,
+      model: model || undefined,
+      year_from: year_from || undefined,
+      year_to: year_to || undefined,
+      engine: engine || undefined,
+      variant: variant || undefined,
+      body_type: body_type || undefined,
       category_key: category_key || undefined,
       system_group_key: system_group_key || undefined,
       subcategory_key: subcategory_key || undefined,
@@ -169,12 +225,12 @@ function buildPreview(csvText: string): {
         ...base,
         status: "invalid",
         error:
-          "Missing required headers. Need one of product_handle|sku|article_number and one of vehicle_key|vehicle_handle.",
+          "Missing required headers. Need one of product_id|product_handle|product_sku|sku|article_number and one of vehicle_gid|vehicle_key|vehicle_handle or make+model.",
       });
       continue;
     }
-    const hasProduct = !!(product_handle || sku || article_number);
-    const hasVehicle = !!(vehicle_key || vehicle_handle);
+    const hasProduct = !!(product_id || product_handle || product_sku || sku || article_number);
+    const hasVehicle = !!(vehicle_gid || vehicle_key || vehicle_handle || (make && model));
     if (!hasProduct || !hasVehicle) {
       out.push({ ...base, status: "invalid", error: "Missing product identifier or vehicle identifier" });
       continue;
@@ -213,12 +269,26 @@ export async function action({ request }: ActionFunctionArgs) {
     const parsed = JSON.parse(rowsRaw);
     if (!Array.isArray(parsed)) throw new Error("rows must be an array");
     rows = parsed.map((r: any) => ({
+      product_id: str(r.product_id) || undefined,
       product_handle: str(r.product_handle) || undefined,
+      product_sku: str(r.product_sku) || undefined,
+      product_title: str(r.product_title) || undefined,
+      category: str(r.category) || undefined,
+      system_group: str(r.system_group) || undefined,
+      subcategory: str(r.subcategory) || undefined,
       sku: str(r.sku) || undefined,
       article_number: str(r.article_number) || undefined,
       brand: str(r.brand) || undefined,
+      vehicle_gid: str(r.vehicle_gid) || undefined,
       vehicle_key: str(r.vehicle_key) || undefined,
       vehicle_handle: str(r.vehicle_handle) || undefined,
+      make: str(r.make) || undefined,
+      model: str(r.model) || undefined,
+      year_from: str(r.year_from) || undefined,
+      year_to: str(r.year_to) || undefined,
+      engine: str(r.engine) || undefined,
+      variant: str(r.variant) || undefined,
+      body_type: str(r.body_type) || undefined,
       category_key: str(r.category_key) || undefined,
       system_group_key: str(r.system_group_key) || undefined,
       subcategory_key: str(r.subcategory_key) || undefined,
@@ -229,7 +299,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const valid = rows.filter(
-    (r) => !!((r.product_handle || r.sku || r.article_number) && (r.vehicle_key || r.vehicle_handle)),
+    (r) =>
+      !!(
+        (r.product_id || r.product_handle || r.product_sku || r.sku || r.article_number) &&
+        (r.vehicle_gid || r.vehicle_key || r.vehicle_handle || (r.make && r.model))
+      ),
   );
   if (!valid.length) return json({ ok: false, error: "No valid rows" }, { status: 400 });
 
@@ -265,6 +339,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const productByArticleCache = new Map<string, any | null>();
 
   async function resolveProduct(r: CsvRow) {
+    const productId = str(r.product_id || "");
+    if (productId.startsWith("gid://")) {
+      // Product GID from export - already resolved.
+      return { id: productId, handle: r.product_handle || null };
+    }
+
     const ph = str(r.product_handle || "").toLowerCase();
     if (ph) {
       if (productByHandleCache.has(ph)) return productByHandleCache.get(ph) ?? null;
@@ -274,6 +354,18 @@ export async function action({ request }: ActionFunctionArgs) {
       productByHandleCache.set(ph, p);
       if (p?.id) return p;
     }
+
+    const productSku = str(r.product_sku || "");
+    if (productSku) {
+      if (productBySkuCache.has(productSku)) return productBySkuCache.get(productSku) ?? null;
+      const resp = await admin.graphql(PRODUCTS_BY_QUERY, { variables: { first: 3, query: `sku:${productSku}` } });
+      const json = await resp.json();
+      const nodes = json?.data?.products?.nodes;
+      const p = Array.isArray(nodes) && nodes.length ? nodes[0] : null;
+      productBySkuCache.set(productSku, p);
+      if (p?.id) return p;
+    }
+
     const sku = str(r.sku || "");
     if (sku) {
       if (productBySkuCache.has(sku)) return productBySkuCache.get(sku) ?? null;
@@ -301,18 +393,69 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const vehicleCache = new Map<string, any | null>();
   async function resolveVehicle(r: CsvRow) {
+    const gid = str(r.vehicle_gid || "");
+    if (gid) {
+      if (!gid.startsWith("gid://shopify/Metaobject/")) {
+        vehicleCache.set(`gid:${gid}`, null);
+        return null;
+      }
+      const key = `gid:${gid}`;
+      if (vehicleCache.has(key)) return vehicleCache.get(key) ?? null;
+      const resp = await admin.graphql(
+        `#graphql
+          query VehicleById($ids: [ID!]!) {
+            nodes(ids: $ids) {
+              ... on Metaobject {
+                id
+                type
+                handle
+                fields { key value }
+              }
+            }
+          }
+        `,
+        { variables: { ids: [gid] } },
+      );
+      const json = await resp.json();
+      const node = Array.isArray(json?.data?.nodes) ? json.data.nodes[0] : null;
+      if (!node?.id) {
+        vehicleCache.set(key, null);
+        return null;
+      }
+      if (String(node?.type ?? "") !== "vehicle") {
+        vehicleCache.set(key, null);
+        return null;
+      }
+      vehicleCache.set(key, node);
+      return node;
+    }
+
     const vk = str(r.vehicle_key || "");
     const vh = str(r.vehicle_handle || "");
-    const key = vk ? `vk:${vk}` : vh ? `vh:${vh}` : "";
+    const make = str(r.make || "");
+    const model = str(r.model || "");
+    const key = gid ? `gid:${gid}` : vk ? `vk:${vk}` : vh ? `vh:${vh}` : make && model ? `mm:${make}|${model}` : "";
     if (!key) return null;
     if (vehicleCache.has(key)) return vehicleCache.get(key) ?? null;
 
-    const q = vk || vh;
-    const resp = await admin.graphql(SEARCH_VEHICLES, { variables: { first: 15, after: null, query: q || null } });
+    const q = [vk, vh, make, model, str(r.year_from || ""), str(r.year_to || ""), str(r.engine || ""), str(r.variant || "")]
+      .filter(Boolean)
+      .join(" ");
+    const resp = await admin.graphql(SEARCH_VEHICLES, { variables: { first: 30, after: null, query: q || null } });
     const json = await resp.json();
-    const nodes: any[] = Array.isArray(json?.data?.metaobjectsByType?.nodes)
-      ? json.data.metaobjectsByType.nodes
+    const nodesRaw: any[] = Array.isArray(json?.data?.metaobjects?.nodes)
+      ? json.data.metaobjects.nodes
       : [];
+    const nodes: any[] = nodesRaw.map((n) => {
+      const fields: any[] = Array.isArray(n?.fields) ? n.fields : [];
+      const fieldValueByKey = (key: string) =>
+        String(fields.find((f) => String(f?.key ?? "") === key)?.value ?? "").trim();
+      return {
+        ...n,
+        vehicle_key: { value: fieldValueByKey("vehicle_key") },
+        display_name: { value: fieldValueByKey("display_name") },
+      };
+    });
 
     let chosen: any | null = null;
     if (vk) chosen = nodes.find((n) => fieldValue(n?.vehicle_key) === vk) ?? null;
@@ -323,18 +466,44 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const validatedRows: ValidatedRow[] = [];
-  const upserts: any[] = [];
+  const byProduct = new Map<string, Set<string>>();
 
   for (const r of valid.slice(0, 500)) {
+    const errors: string[] = [];
+    if (!(r.product_id || r.product_handle || r.product_sku || r.sku || r.article_number)) {
+      errors.push("Missing product_id/product_handle/product_sku");
+    }
+    if (!(r.vehicle_gid || r.vehicle_handle || r.vehicle_key || (r.make && r.model))) {
+      errors.push("Missing vehicle fields");
+    }
+
     const product = await resolveProduct(r);
-    if (!product?.id || !product?.handle) {
-      validatedRows.push({ ...r, status: "error", message: "Product not found (handle → SKU → article_number)" });
+    if (!product?.id) {
+      errors.push("Product not found");
+      validatedRows.push({ ...r, status: "error", errors });
       continue;
     }
     const vehicle = await resolveVehicle(r);
     const vehicleKeyResolved = fieldValue(vehicle?.vehicle_key) || str(r.vehicle_key || "");
     if (!vehicle?.id || !vehicleKeyResolved) {
-      validatedRows.push({ ...r, status: "error", message: "Vehicle not found (vehicle_key → handle → display_name)" });
+      if (r.vehicle_gid && !String(r.vehicle_gid).startsWith("gid://shopify/Metaobject/")) {
+        errors.push("Invalid vehicle_gid");
+      } else if (r.vehicle_gid) {
+        errors.push("Vehicle not found by vehicle_gid");
+      } else if (r.vehicle_handle) {
+        errors.push("Vehicle not found by vehicle_handle");
+      } else if (r.vehicle_key) {
+        errors.push("Vehicle not found by vehicle_key");
+      } else {
+        errors.push("Vehicle not found by make/model/year/engine/variant");
+      }
+      validatedRows.push({
+        ...r,
+        status: "error",
+        errors,
+        product_id: String(product.id),
+        product_handle_resolved: String(product.handle ?? r.product_handle ?? ""),
+      });
       continue;
     }
 
@@ -345,29 +514,16 @@ export async function action({ request }: ActionFunctionArgs) {
     validatedRows.push({
       ...r,
       status: "ready",
-      message: "OK",
+      errors: [],
       product_id: String(product.id),
-      product_handle_resolved: String(product.handle),
+      product_handle_resolved: String(product.handle ?? r.product_handle ?? ""),
       vehicle_id: String(vehicle.id),
       vehicle_key_resolved: vehicleKeyResolved,
     });
 
-    upserts.push({
-      shop_domain,
-      product_gid: String(product.id),
-      product_handle: String(product.handle),
-      sku: skuResolved || (r.sku ? String(r.sku) : null),
-      article_number: articleResolved || (r.article_number ? String(r.article_number) : null),
-      brand: brandResolved || (r.brand ? String(r.brand) : null),
-      vehicle_gid: String(vehicle.id),
-      vehicle_handle: String(vehicle.handle ?? "") || null,
-      vehicle_key: vehicleKeyResolved,
-      vehicle_display_name: fieldValue(vehicle.display_name) || null,
-      category_key: r.category_key ? String(r.category_key) : null,
-      system_group_key: r.system_group_key ? String(r.system_group_key) : null,
-      subcategory_key: r.subcategory_key ? String(r.subcategory_key) : null,
-      source: "import",
-    });
+    const pid = String(product.id);
+    if (!byProduct.has(pid)) byProduct.set(pid, new Set());
+    byProduct.get(pid)!.add(String(vehicle.id));
   }
 
   const counts = {
@@ -385,17 +541,31 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "No rows ready to import", mode: "apply", counts, rows: validatedRows }, { status: 400 });
   }
 
-  await upsertFitmentRows(upserts);
+  // Apply to Shopify metafield fitment.vehicles (no Supabase).
+  for (const [productGid, set] of byProduct.entries()) {
+    const value = JSON.stringify(Array.from(set));
+    const resp = await admin.graphql(SET_FITMENT_VEHICLES, { variables: { ownerId: productGid, value } });
+    const data = await resp.json();
+    const errs = data?.data?.metafieldsSet?.userErrors ?? [];
+    if (Array.isArray(errs) && errs.length) {
+      return json(
+        { ok: false, error: `Failed to set fitment for a product`, userErrors: errs, mode: "apply", counts, rows: validatedRows },
+        { status: 400 },
+      );
+    }
+  }
   return json({
     ok: true,
     mode: "apply",
     counts,
     rows: validatedRows,
-    summary: { rows: valid.length, upserted: upserts.length },
+    summary: { rows: valid.length, updatedProducts: byProduct.size },
   });
 }
 
 export default function ImportCsv() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const validateFetcher = useFetcher<typeof action>();
   const applyFetcher = useFetcher<typeof action>();
   const [fileName, setFileName] = React.useState<string>("");
@@ -426,12 +596,26 @@ export default function ImportCsv() {
           "rows",
           JSON.stringify(
             ok.map((r) => ({
+              product_id: r.product_id,
               product_handle: r.product_handle,
+              product_sku: r.product_sku,
+              product_title: r.product_title,
+              category: r.category,
+              system_group: r.system_group,
+              subcategory: r.subcategory,
               sku: r.sku,
               article_number: r.article_number,
               brand: r.brand,
+              vehicle_gid: r.vehicle_gid,
               vehicle_key: r.vehicle_key,
               vehicle_handle: r.vehicle_handle,
+              make: r.make,
+              model: r.model,
+              year_from: r.year_from,
+              year_to: r.year_to,
+              engine: r.engine,
+              variant: r.variant,
+              body_type: r.body_type,
               category_key: r.category_key,
               system_group_key: r.system_group_key,
               subcategory_key: r.subcategory_key,
@@ -465,7 +649,9 @@ export default function ImportCsv() {
   function submitApply() {
     setError(null);
     if (!headerOk) {
-      setError("CSV must include one of product_handle|sku|article_number and one of vehicle_key|vehicle_handle");
+      setError(
+        "CSV must include one of product_id|product_handle|product_sku|sku|article_number and one of vehicle_gid|vehicle_handle|vehicle_key or make+model",
+      );
       return;
     }
     if (!readyRows.length) {
@@ -478,12 +664,26 @@ export default function ImportCsv() {
       "rows",
       JSON.stringify(
         readyRows.map((r) => ({
+          product_id: r.product_id,
           product_handle: r.product_handle,
+          product_sku: r.product_sku,
+          product_title: r.product_title,
+          category: r.category,
+          system_group: r.system_group,
+          subcategory: r.subcategory,
           sku: r.sku,
           article_number: r.article_number,
           brand: r.brand,
+          vehicle_gid: r.vehicle_gid,
           vehicle_key: r.vehicle_key,
           vehicle_handle: r.vehicle_handle,
+          make: r.make,
+          model: r.model,
+          year_from: r.year_from,
+          year_to: r.year_to,
+          engine: r.engine,
+          variant: r.variant,
+          body_type: r.body_type,
           category_key: r.category_key,
           system_group_key: r.system_group_key,
           subcategory_key: r.subcategory_key,
@@ -499,7 +699,10 @@ export default function ImportCsv() {
   return (
     <Page
       title="Bulk import (CSV)"
-      backAction={{ content: "Products", url: "/app/products" }}
+      backAction={{
+        content: "Back to Products",
+        onAction: () => navigate(`/app/products${location.search || ""}`),
+      }}
       primaryAction={{
         content: counts ? `Import ${counts.ready} rows` : "Import",
         onAction: submitApply,
@@ -553,9 +756,11 @@ export default function ImportCsv() {
               </Text>
             ) : (
               <Text as="p" variant="bodyMd" tone="subdued">
-                CSV columns: <Text as="span">product_handle</Text> or <Text as="span">sku</Text> or{" "}
+                CSV columns: <Text as="span">product_id</Text> or <Text as="span">product_handle</Text> or{" "}
+                <Text as="span">product_sku</Text> or <Text as="span">sku</Text> or{" "}
                 <Text as="span">article_number</Text>, <Text as="span">brand</Text>,{" "}
-                <Text as="span">vehicle_key</Text> or <Text as="span">vehicle_handle</Text>,{" "}
+                <Text as="span">vehicle_gid</Text> or <Text as="span">vehicle_key</Text> or{" "}
+                <Text as="span">vehicle_handle</Text> or <Text as="span">make</Text>+<Text as="span">model</Text>,{" "}
                 <Text as="span">category_key</Text>, <Text as="span">system_group_key</Text>,{" "}
                 <Text as="span">subcategory_key</Text>.
               </Text>
@@ -593,14 +798,16 @@ export default function ImportCsv() {
                 { title: "Row" },
                 { title: "Product" },
                 { title: "Vehicle" },
-                { title: "Category/Subcat" },
                 { title: "Status" },
+                { title: "Error" },
               ]}
               selectable={false}
             >
               {(Array.isArray(validated) ? validated : okRows).slice(0, 300).map((r: any, idx: number) => {
                 const status: ValidatedStatus | "invalid" | "ok" = r.status;
-                const msg = String(r.message || r.error || "");
+                const msg = Array.isArray(r.errors)
+                  ? r.errors.map((x: any) => String(x || "").trim()).filter(Boolean).join("; ")
+                  : String(r.error || "");
                 const badge =
                   status === "ready" ? <Badge tone="success">Ready</Badge> :
                   status === "warning" ? <Badge tone="warning">Warning</Badge> :
@@ -613,28 +820,32 @@ export default function ImportCsv() {
                     <IndexTable.Cell>{r.line}</IndexTable.Cell>
                     <IndexTable.Cell>
                       <Text as="span" variant="bodyMd">
-                        {r.product_handle || r.sku || r.article_number || "—"}
+                        {r.product_id || r.product_handle || r.product_sku || r.sku || r.article_number || "—"}
                       </Text>
                     </IndexTable.Cell>
                     <IndexTable.Cell>
                       <Text as="span" variant="bodyMd">
-                        {r.vehicle_key || r.vehicle_handle || "—"}
-                      </Text>
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        {(r.category_key || "—") + " / " + (r.subcategory_key || "—")}
+                        {r.vehicle_gid || r.vehicle_handle || r.vehicle_key || "—"}
                       </Text>
                     </IndexTable.Cell>
                     <IndexTable.Cell>
                       <InlineStack gap="200" blockAlign="center">
                         {badge}
-                        {msg ? (
-                          <Text as="span" tone={status === "error" || status === "invalid" ? "critical" : undefined} variant="bodySm">
-                            {msg}
+                        {status === "ready" ? (
+                          <Text as="span" variant="bodySm" tone="subdued">
+                            OK
                           </Text>
                         ) : null}
                       </InlineStack>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <Text
+                        as="span"
+                        variant="bodySm"
+                        tone={status === "error" || status === "invalid" ? "critical" : "subdued"}
+                      >
+                        {msg || "—"}
+                      </Text>
                     </IndexTable.Cell>
                   </IndexTable.Row>
                 );

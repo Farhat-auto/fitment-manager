@@ -1,7 +1,10 @@
-import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 import path from "node:path";
+import { getProjectRoot, loadDotenvFiles, resolveShopifyAdminAccessTokenAsync, throwIfShopifyGraphqlErrors } from "./shopify-admin-env.mjs";
+
+const projectRoot = getProjectRoot(import.meta.url);
+loadDotenvFiles(projectRoot);
 
 function reqEnv(name) {
   const v = process.env[name];
@@ -41,6 +44,17 @@ function splitRefs(value) {
     .split(/[\n\r,;|]+/g)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+/** Align with app/utils/oeReferences.ts — clean duplicated OE prefix for CSV oe_reference column. */
+function normalizeOeReferenceLine(raw) {
+  let line = String(raw ?? "").trim();
+  if (!line) return "";
+  while (/^OE\s+OE\s+/i.test(line)) {
+    line = line.replace(/^OE\s+OE\s+/i, "OE ");
+  }
+  line = line.replace(/\s+/g, " ");
+  return line.trim();
 }
 
 function csvParse(text) {
@@ -131,7 +145,7 @@ function readFitmentSourceCsv(csvPath) {
     const row = {
       article_number: iArticle !== -1 ? String(cols[iArticle] ?? "").trim() : "",
       brand: iBrand !== -1 ? String(cols[iBrand] ?? "").trim() : "",
-      oe_reference: iOe !== -1 ? String(cols[iOe] ?? "").trim() : "",
+      oe_reference: iOe !== -1 ? normalizeOeReferenceLine(String(cols[iOe] ?? "")) : "",
       cross_reference: iCross !== -1 ? String(cols[iCross] ?? "").trim() : "",
       vehicle_key: iVk !== -1 ? String(cols[iVk] ?? "").trim() : "",
       vehicle_handle: iVh !== -1 ? String(cols[iVh] ?? "").trim() : "",
@@ -164,20 +178,13 @@ async function shopifyGraphql(shopDomain, accessToken, apiVersion, query, variab
     throw new Error(`Shopify GraphQL HTTP ${resp.status} (${url}): ${JSON.stringify(json)}`);
   }
   if (json?.errors?.length) {
-    throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors)}`);
+    throwIfShopifyGraphqlErrors(json);
   }
   return json;
 }
 
 const shop_domain = normalizeShopDomain(reqEnv("SHOP_DOMAIN"));
-const adminToken = reqEnv("SHOPIFY_ADMIN_ACCESS_TOKEN");
 const apiVersion = process.env.SHOPIFY_ADMIN_API_VERSION || "2024-10";
-
-if (/^shpss_/i.test(adminToken)) {
-  throw new Error(
-    "SHOPIFY_ADMIN_ACCESS_TOKEN looks like a Shopify app secret (shpss_*), not an Admin API access token (shpat_*).",
-  );
-}
 
 const supabaseUrl = reqEnv("SUPABASE_URL");
 const serviceKey = reqEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -236,6 +243,8 @@ let totalMatches = 0;
 let totalUpserts = 0;
 
 async function main() {
+  const adminToken = await resolveShopifyAdminAccessTokenAsync(projectRoot, shop_domain);
+
   while (true) {
     const resp = await shopifyGraphql(shop_domain, adminToken, apiVersion, PRODUCTS_QUERY, {
       first: 100,

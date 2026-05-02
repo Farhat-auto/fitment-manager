@@ -2,9 +2,9 @@ import {
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
-import { MemorySessionStorage } from "@shopify/shopify-app-session-storage-memory";
+import { SupabaseSessionStorage } from "./sessions/supabaseSessionStorage.server";
 
-const sessionStorage = new MemorySessionStorage();
+const sessionStorage = new SupabaseSessionStorage();
 
 export const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",
