@@ -14,7 +14,8 @@
     "backfill:fitment-keys": "node scripts/backfill-fitment-keys.mjs",
     "test:oe-normalize": "node scripts/test-oe-search-normalize.mjs",
     "test:supabase": "node scripts/test-supabase-connection.mjs",
-    "test:ocean-identity": "node --experimental-strip-types tests/identity-isolation.test.ts"
+    "test:ocean-identity": "node --experimental-strip-types tests/identity-isolation.test.ts",
+    "test:embedded-nav": "node --experimental-strip-types tests/embedded-nav.test.ts"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",
