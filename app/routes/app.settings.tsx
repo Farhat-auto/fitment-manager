@@ -24,9 +24,12 @@ export default function SettingsPage() {
       }}
     >
       <BlockStack gap="400">
-        <Banner tone="success" title="Fitment metafield ready">
+        <Banner tone="warning" title="LEGACY Shopify vehicle system">
           <p>
-            The <code>fitment.vehicles</code> metafield is used to store compatible vehicle metaobject references.
+            <code>fitment.vehicles</code>, <code>custom.compatible_vehicles</code>, and vehicle metaobjects
+            are retained read-only. New compatibility is Ocean <code>product_fitment</code> →{" "}
+            <code>vehicle_id</code>. Status cache only: <code>ocean.fitment_count</code>,{" "}
+            <code>ocean.fitment_status</code>, <code>ocean.zero_fitment</code>.
           </p>
         </Banner>
         <Card>
