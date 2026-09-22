@@ -13,7 +13,8 @@
     "backfill:search-index": "node scripts/backfill-search-index.mjs",
     "backfill:fitment-keys": "node scripts/backfill-fitment-keys.mjs",
     "test:oe-normalize": "node scripts/test-oe-search-normalize.mjs",
-    "test:supabase": "node scripts/test-supabase-connection.mjs"
+    "test:supabase": "node scripts/test-supabase-connection.mjs",
+    "test:ocean-identity": "node --experimental-strip-types tests/identity-isolation.test.ts"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",
