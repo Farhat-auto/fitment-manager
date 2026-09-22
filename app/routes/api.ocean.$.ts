@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { oceanGet, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
+import { oceanGet, oceanPost, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { emptyListing, stableIdentity } from "../ocean/identity";
 
 const ALLOWED = new Set([
@@ -19,6 +19,10 @@ const ALLOWED = new Set([
   "product-fitment",
   "car-fitment",
   "fitments",
+  "oe-family",
+  "product-review",
+  "analyse",
+  "storefront-compatibility",
 ]);
 
 function preflight() {
@@ -69,6 +73,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const name = routeName(params as { "*": string });
   if (!ALLOWED.has(name)) {
     return cors(json({ ok: false, error: "not_found", path: name }, { status: 404 }));
+  }
+  if (name === "product-review" || name === "analyse" || name === "oe-family") {
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+    const payload = await oceanPost(`/${name}`, body);
+    return cors(json(payload));
   }
   if (name !== "product-fitment" && name !== "car-fitment" && name !== "fitments") {
     return cors(json({ ok: false, error: "method_not_allowed" }, { status: 405 }));

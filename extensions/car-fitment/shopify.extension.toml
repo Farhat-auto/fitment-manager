@@ -21,6 +21,22 @@ target = "admin.product-details.action.render"
 module = "./src/ShouldRender.js"
 target = "admin.product-details.action.should-render"
 
+[[extensions.targeting]]
+module = "./src/Action.jsx"
+target = "admin.product-index.selection-action.render"
+
+[[extensions.targeting]]
+module = "./src/ShouldRender.js"
+target = "admin.product-index.selection-action.should-render"
+
+[[extensions.targeting]]
+module = "./src/Action.jsx"
+target = "admin.product-index.action.render"
+
+[[extensions.targeting]]
+module = "./src/ShouldRender.js"
+target = "admin.product-index.action.should-render"
+
 [extensions.capabilities]
 api_access = true
 network_access = true

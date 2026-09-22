@@ -1,11 +1,13 @@
 {
-  "name": "CAR FITMENT",
-  "heading": "CAR FITMENT",
+  "name": "Ocean Catalogue / CAR FITMENT",
+  "heading": "Ocean Catalogue / CAR FITMENT",
   "compatibility": "Vehicle compatibility",
   "add-vehicle": "+ Add vehicle",
   "bulk-add": "Bulk add",
   "import-fitment": "Import fitment",
   "add-compatibility": "Add compatibility",
+  "analyse": "Analyse & Complete Product Data",
+  "oe-family": "OE / Cross-reference family",
   "edit": "Edit",
   "remove": "Remove",
   "cancel": "Cancel",
@@ -34,5 +36,7 @@
   "ladder-error": "Vehicle catalogue could not be loaded. Fitment is not guessed from the product title.",
   "updated": "Vehicle compatibility updated.",
   "error": "Could not update car fitment.",
-  "fail-closed": "Only explicit product_fitment rows count. Title, tags, vendor, type, collection and description are never used."
+  "fail-closed": "Only explicit product_fitment rows count. Title, tags, vendor, type, collection and description are never used.",
+  "oe-warning": "Same OE number does not automatically mean same vehicle fitment.",
+  "legacy-warning": "Legacy Shopify vehicles are reference only and are not Ocean-verified."
 }

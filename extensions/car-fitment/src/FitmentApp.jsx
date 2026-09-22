@@ -11,9 +11,17 @@ function qs(params) {
 
 export function FitmentApp({ mode }) {
   const { close, data, i18n } = shopify;
-  const selectedId = ((((data || {}).selected) || [])[0] || {}).id || "";
+  const selected = ((data || {}).selected) || [];
+  const selectedIds = selected.map((row) => row && row.id).filter(Boolean);
+  const fallbackId = ((((data || {}).selected) || [])[0] || {}).id || "";
+  const [activeId, setActiveId] = useState(selectedIds[0] || fallbackId);
+  const selectedId = activeId || fallbackId;
   const [product, setProduct] = useState(null);
+  const [products, setProducts] = useState([]);
   const [listing, setListing] = useState({ fitments: [], count: 0, sources: [], verification_statuses: [] });
+  const [workspace, setWorkspace] = useState("fitment");
+  const [review, setReview] = useState(null);
+  const [family, setFamily] = useState(null);
   const [view, setView] = useState(mode === "action" ? "add" : "list");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,6 +52,9 @@ export function FitmentApp({ mode }) {
       shopify_variant_id: product.variantNumericId,
       sku: product.sku,
       handle: product.handle,
+      brand: product.vendor,
+      mpn: product.mpn,
+      barcode: product.barcode,
       product: {
         id: product.id,
         sku: product.sku,
@@ -51,6 +62,7 @@ export function FitmentApp({ mode }) {
         barcode: product.barcode,
         vendor: product.vendor,
         variant_id: product.variantId,
+        mpn: product.mpn,
       },
     };
   }, [product]);
@@ -114,15 +126,21 @@ export function FitmentApp({ mode }) {
   );
 
   useEffect(() => {
-    if (!selectedId) return;
+    const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    if (!ids.length) return;
     resetProductScreen();
-    adminGraphql(PRODUCT_QUERY, { id: selectedId }).then((payload) => {
-      const node = ((payload || {}).data || {}).product;
-      const row = productFromNode(node || { id: selectedId });
-      setProduct(row);
+    Promise.all(ids.map((id) => adminGraphql(PRODUCT_QUERY, { id }))).then((rows) => {
+      const mapped = rows.map((payload, index) => {
+        const node = ((payload || {}).data || {}).product;
+        return productFromNode(node || { id: ids[index] });
+      });
+      setProducts(mapped);
+      const current = mapped.find((row) => row.id === selectedId) || mapped[0];
+      setProduct(current || null);
+      if (current && current.id !== selectedId) setActiveId(current.id);
     });
     catalogueGet("/makes").then((payload) => setMakes(payload.makes || []));
-  }, [selectedId]);
+  }, [selectedIds.join("|")]);
 
   useEffect(() => {
     if (!product) return;
@@ -130,6 +148,38 @@ export function FitmentApp({ mode }) {
     loadFitments(product).then((payload) => {
       if (cancelled) return payload;
       return payload;
+    });
+    const query = qs({
+      shopify_product_id: product.numericId,
+      sku: product.sku,
+      handle: product.handle,
+      shopify_variant_id: product.variantNumericId,
+      brand: product.vendor,
+      mpn: product.mpn,
+      barcode: product.barcode,
+    });
+    catalogueGet("/oe-family?" + query, true).then((payload) => {
+      if (!cancelled) setFamily(payload || { candidates: [], copied_fitment: false });
+    });
+    cataloguePost("/product-review", {
+      action: "review",
+      shopify_product_id: product.numericId,
+      sku: product.sku,
+      handle: product.handle,
+      brand: product.vendor,
+      mpn: product.mpn,
+      barcode: product.barcode,
+      shopify: {
+        sku: product.sku,
+        vendor: product.vendor,
+        mpn: product.mpn,
+        barcode: product.barcode,
+        handle: product.handle,
+        product_type: product.productType,
+        legacy_fitment: product.legacyVehicles || product.customVehicles,
+      },
+    }).then((payload) => {
+      if (!cancelled) setReview(payload);
     });
     return () => {
       cancelled = true;
@@ -431,6 +481,86 @@ export function FitmentApp({ mode }) {
       ) : null}
 
       <s-stack gap="base">
+        {products.length > 1 ? (
+          <s-stack gap="small">
+            <s-text>Selected Shopify products</s-text>
+            {products.map((row) => (
+              <s-button
+                variant={row.id === (product && product.id) ? "primary" : "secondary"}
+                onClick={() => {
+                  resetProductScreen();
+                  setActiveId(row.id);
+                  setProduct(row);
+                  setWorkspace("fitment");
+                }}
+              >
+                {(row.vendor || "Product") + " · " + (row.sku || row.numericId)}
+              </s-button>
+            ))}
+          </s-stack>
+        ) : null}
+        {product ? (
+          <s-banner>
+            Identity: Shopify {product.numericId} → variant {product.variantNumericId} → SKU {product.sku || "—"} → {product.vendor || "—"} + {product.mpn || "—"}. Display title is not an identity key. Ocean article {listing.unmapped ? "unmapped" : listing.sku || product.sku}. {listing.fitment_label || "Fitment: 0 vehicles"}.
+          </s-banner>
+        ) : null}
+        <s-stack direction="inline" gap="small">
+          <s-button onClick={() => setWorkspace("fitment")}>CAR FITMENT</s-button>
+          <s-button onClick={() => setWorkspace("review")}>{i18n.translate("analyse")}</s-button>
+          <s-button onClick={() => setWorkspace("family")}>{i18n.translate("oe-family")}</s-button>
+        </s-stack>
+        {workspace === "review" && review ? (
+          <s-stack gap="base">
+            <s-banner tone="warning">Do not blindly overwrite existing Shopify information. Proposed values stay unapplied until review.</s-banner>
+            <s-text>PRODUCT IDENTITY: Shopify {product && product.numericId} → variant {product && product.variantNumericId} → SKU {product && product.sku} → {(product && product.vendor) || "—"} + {(product && product.mpn) || "—"}</s-text>
+            <s-text>SHOPIFY DATA: type {(product && product.productType) || "—"} · category {(product && product.category) || "—"} · barcode {(product && product.barcode) || "—"} · price {(product && product.price) || "—"}</s-text>
+            <s-text>
+              OCEAN ARTICLE: {review.unmapped ? "unmapped" : ((review.ocean_article && review.ocean_article.brand) || "") + " " + ((review.ocean_article && review.ocean_article.sku) || "")}
+            </s-text>
+            <s-text>OE NUMBERS: {(review.oe_numbers || []).map((row) => row.number).join(", ") || "none"}</s-text>
+            <s-text>CROSS REFERENCES: {(review.cross_references || []).map((row) => (row.brand || "") + " " + row.number).join(", ") || "none"}</s-text>
+            <s-text>
+              TECHNICAL SPECIFICATIONS: weight {((review.ocean_article && review.ocean_article.specifications) || {}).weight || "—"} · dimensions {((review.ocean_article && review.ocean_article.specifications) || {}).dimensions || "—"}
+            </s-text>
+            <s-text>IMAGES: {(product && product.images && product.images.length) || 0} Shopify image(s). Ocean images are not auto-copied.</s-text>
+            <s-text>CATEGORY: {(review.ocean_article && review.ocean_article.category) || "—"}</s-text>
+            <s-text>SYSTEM GROUP: {(review.ocean_article && review.ocean_article.system_group) || "—"}</s-text>
+            <s-text>SUBCATEGORY: {(review.ocean_article && review.ocean_article.subcategory) || "—"}</s-text>
+            <s-text>VEHICLE FITMENT: {(review.vehicle_fitment && review.vehicle_fitment.fitment_label) || "Fitment: 0 vehicles"}</s-text>
+            <s-text>MISSING DATA: {(review.missing || []).join(", ") || "none"}</s-text>
+            <s-text>CONFLICTS: {(review.conflicts || []).join(", ") || "none"}</s-text>
+            <s-text>VERIFICATION STATUS: {review.verification_status || "UNVERIFIED"}</s-text>
+            {Object.keys(review.fields || {}).map((key) => {
+              const row = review.fields[key];
+              return (
+                <s-text>
+                  {key}: Shopify [{row.current || "—"}] → Ocean [{row.ocean || "—"}] → proposed [{row.proposed || "—"}] ({row.source} / {row.status})
+                </s-text>
+              );
+            })}
+            <s-banner>{i18n.translate("legacy-warning")}</s-banner>
+            {product && (product.legacyVehicles || product.customVehicles) ? (
+              <s-text>Legacy Shopify vehicles (reference only): {String(product.legacyVehicles || product.customVehicles).slice(0, 280)}</s-text>
+            ) : null}
+          </s-stack>
+        ) : null}
+        {workspace === "family" ? (
+          <s-stack gap="base">
+            <s-banner tone="warning">{i18n.translate("oe-warning")}</s-banner>
+            {(family && family.oe_numbers ? family.oe_numbers : []).map((row) => (
+              <s-text>OE {row.number} {row.oem_brand ? "(" + row.oem_brand + ")" : ""}</s-text>
+            ))}
+            {(family && family.candidates ? family.candidates : []).map((row) => (
+              <s-text>
+                {row.brand} {row.sku} — research only. copied_fitment={String(row.copied_fitment)}
+              </s-text>
+            ))}
+            {!(family && family.candidates && family.candidates.length) ? <s-text>No OE-family peers.</s-text> : null}
+          </s-stack>
+        ) : null}
+
+        {workspace === "fitment" ? (
+        <s-stack gap="base">
         <s-stack direction="inline" justifyContent="space-between" alignItems="center">
           <s-text>{i18n.translate("compatibility")}</s-text>
           <s-badge tone={count ? "success" : "warning"}>{listing.fitment_label || "Fitment: " + count + " vehicles"}</s-badge>
@@ -566,6 +696,8 @@ export function FitmentApp({ mode }) {
         ) : null}
 
         <s-text>{i18n.translate("fail-closed")}</s-text>
+        </s-stack>
+        ) : null}
       </s-stack>
     </Wrapper>
   );
