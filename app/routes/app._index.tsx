@@ -8,19 +8,24 @@ export default function AppIndex() {
   return (
     <Page title="Fitment Manager">
       <BlockStack gap="400">
-        <Banner title="Fitment metafield ready" tone="success">
-          <p>The <code>fitment.vehicles</code> metafield definition is configured and ready to use.</p>
+        <Banner title="Ocean is the fitment authority" tone="info">
+          <p>
+            This Remix app is the authenticated Shopify Admin frontend. Compatibility is stored as
+            Ocean catalogue article → <code>product_fitment</code> → Ocean <code>vehicle_id</code>.
+            Supabase is session infrastructure only. Legacy Shopify vehicle metafields are read-only.
+          </p>
         </Banner>
 
         <Card>
           <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Manage Product Fitment</Text>
+            <Text as="h2" variant="headingMd">CAR FITMENT</Text>
             <Text as="p" variant="bodyMd">
-              Select a product and link it to compatible vehicle metaobjects.
+              Open a Shopify product and manage Make → Model → Generation → Engine → Ocean vehicle_id.
+              Identity is Shopify product ID, variant ID, SKU, or Brand+MPN — never title.
             </Text>
             <InlineStack>
               <Button variant="primary" onClick={() => navigate(`/app/products${qs}`)}>
-                Open
+                Open products
               </Button>
             </InlineStack>
           </BlockStack>
@@ -28,41 +33,16 @@ export default function AppIndex() {
 
         <Card>
           <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Bulk Import CSV</Text>
+            <Text as="h2" variant="headingMd">LEGACY Shopify vehicle tools</Text>
             <Text as="p" variant="bodyMd">
-              Upload a CSV file to link multiple products to vehicles at once.
+              Import/export against <code>fitment.vehicles</code> is retained but no longer writes new
+              compatibility. Use CAR FITMENT instead.
             </Text>
             <InlineStack>
-              <Button variant="primary" onClick={() => navigate(`/app/import${qs}`)}>
-                Open
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-
-        <Card>
-          <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Export CSV</Text>
-            <Text as="p" variant="bodyMd">
-              Export current product fitment to CSV (product + linked vehicles).
-            </Text>
-            <InlineStack>
-              <Button variant="primary" onClick={() => navigate(`/app/export${qs}`)}>
-                Open
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-
-        <Card>
-          <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Fitment Validation</Text>
-            <Text as="p" variant="bodyMd">
-              Validate Supabase vs Shopify fitment data.
-            </Text>
-            <InlineStack>
+              <Button onClick={() => navigate(`/app/import${qs}`)}>Legacy import</Button>
+              <Button onClick={() => navigate(`/app/export${qs}`)}>Legacy export</Button>
               <Link to={`/app/fitment-validation${qs}`} style={{ textDecoration: "none" }}>
-                <Button variant="primary">Open</Button>
+                <Button>Legacy validation</Button>
               </Link>
             </InlineStack>
           </BlockStack>
@@ -71,13 +51,8 @@ export default function AppIndex() {
         <Card>
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Image Manager</Text>
-            <Text as="p" variant="bodyMd">
-              Search products, view images, and update image alt text.
-            </Text>
             <InlineStack>
-              <Button variant="primary" onClick={() => navigate(`/app/images${qs}`)}>
-                Open
-              </Button>
+              <Button onClick={() => navigate(`/app/images${qs}`)}>Open</Button>
             </InlineStack>
           </BlockStack>
         </Card>
@@ -85,13 +60,8 @@ export default function AppIndex() {
         <Card>
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Settings</Text>
-            <Text as="p" variant="bodyMd">
-              View metafield configuration and vehicle metaobject details.
-            </Text>
             <InlineStack>
-              <Button variant="primary" onClick={() => navigate(`/app/settings${qs}`)}>
-                Open
-              </Button>
+              <Button onClick={() => navigate(`/app/settings${qs}`)}>Open</Button>
             </InlineStack>
           </BlockStack>
         </Card>
@@ -99,4 +69,3 @@ export default function AppIndex() {
     </Page>
   );
 }
-
