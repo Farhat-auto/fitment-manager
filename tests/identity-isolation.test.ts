@@ -159,6 +159,8 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   assert.match(app, /shopify_product_id/);
   assert.match(app, /stale product payload ignored/);
   assert.match(app, /UNVERIFIED/);
+  assert.match(app, /Same OE number does not automatically mean same vehicle fitment|oe-warning/);
+  assert.match(app, /PRODUCT IDENTITY/);
   const api = source("extensions/car-fitment/src/api.js");
   assert.match(api, /sessionToken/);
   assert.match(api, /\/api\/ocean/);
@@ -167,6 +169,19 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   assert.match(payload, /ocean/);
   assert.match(payload, /fitment_count/);
   assert.doesNotMatch(payload, /vehicle_fitment/);
+  const toml = source("extensions/car-fitment/shopify.extension.toml");
+  assert.match(toml, /admin.product-details.block.render/);
+  assert.match(toml, /admin.product-index.selection-action.render/);
+  const locales = source("extensions/car-fitment/locales/en.default.json");
+  assert.match(locales, /Ocean Catalogue \/ CAR FITMENT/);
+});
+
+check("OE family never copies fitment", () => {
+  const app = source("extensions/car-fitment/src/FitmentApp.jsx");
+  assert.match(app, /copied_fitment/);
+  const bff = source("app/routes/api.ocean.$.ts");
+  assert.match(bff, /oe-family/);
+  assert.match(bff, /product-review/);
 });
 
 check("legacy writes are disabled", () => {

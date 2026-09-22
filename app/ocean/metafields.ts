@@ -5,10 +5,17 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       handle
       vendor
       title
+      description
+      productType
+      category { name }
+      featuredImage { url }
       fitmentCount: metafield(namespace: "ocean", key: "fitment_count") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
-      variants(first: 5) {
-        nodes { id sku barcode }
+      oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
+      legacyVehicles: metafield(namespace: "fitment", key: "vehicles") { value }
+      customVehicles: metafield(namespace: "custom", key: "compatible_vehicles") { value }
+      variants(first: 20) {
+        nodes { id sku barcode price inventoryQuantity }
       }
     }
   }
