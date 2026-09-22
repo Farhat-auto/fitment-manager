@@ -78,7 +78,7 @@ export function emptyFitmentRoutePayload(params: {
   return {
     shop_domain: params.shopDomain,
     product: params.product ?? emptyProduct(params.productHandle),
-    vehicleIndex: { builtAt: 0, count: 0, ready: false },
+    vehicleIndex: { builtAt: 0, count: 0, ready: false, complete: false, pageCount: 0, hasNextPage: false, schemaVersion: "" },
     makes: [],
     indexVehicles: [],
     classification: emptyClassification(),

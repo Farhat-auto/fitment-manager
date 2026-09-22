@@ -37,6 +37,19 @@ function check(name: string, fn: () => void | Promise<void>) {
     });
 }
 
+function cacheOf(vehicles: VehicleIndexRow[], extra: Partial<VehicleIndexCache> = {}): VehicleIndexCache {
+  return {
+    builtAt: 1,
+    count: vehicles.length,
+    vehicles,
+    complete: true,
+    pageCount: 1,
+    hasNextPage: false,
+    schemaVersion: "vehicle-index-v2",
+    ...extra,
+  };
+}
+
 function memoryStore(): DurableVehicleIndexStore & { map: Map<string, VehicleIndexCache> } {
   const map = new Map<string, VehicleIndexCache>();
   return {
@@ -58,11 +71,16 @@ function row(i: number, make = "Mercedes-Benz", model = "C-Class"): VehicleIndex
     displayName: `${make} ${model} ${i}`,
     makeName: make,
     modelName: model,
+    generationName: "",
+    series: "",
+    chassis: "",
     engineName: i % 2 ? "M274" : "N54",
+    engineCode: i % 2 ? "M274" : "N54",
     variant: "",
     yearFrom: "2014",
     yearTo: "2021",
     bodyType: "",
+    power: "",
   };
 }
 
@@ -116,7 +134,7 @@ await check("cold-start regression: two serverless reads share 3792 durable vehi
   const store = memoryStore();
   setDurableVehicleIndexStoreForTests(store);
   const vehicles = Array.from({ length: 3792 }, (_, i) => row(i + 1));
-  await store.save(SHOP, { builtAt: 1_700_000_000_000, count: 3792, vehicles });
+  await store.save(SHOP, cacheOf(vehicles, { builtAt: 1_700_000_000_000 }));
 
   let graphqlCalls = 0;
   const admin = {
@@ -147,11 +165,7 @@ await check("index_makes is 409 only when durable store is empty, never because 
   const needsRefreshEmpty = !empty?.vehicles?.length;
   assert.equal(needsRefreshEmpty, true);
 
-  await store.save(SHOP, {
-    builtAt: Date.now(),
-    count: 3792,
-    vehicles: Array.from({ length: 3792 }, (_, i) => row(i + 1)),
-  });
+  await store.save(SHOP, cacheOf(Array.from({ length: 3792 }, (_, i) => row(i + 1))));
   const built = await getVehicleIndex({ admin, shopDomain: SHOP, refresh: false });
   assert.equal(built?.vehicles.length, 3792);
   assert.equal(!built?.vehicles?.length, false);
@@ -168,7 +182,7 @@ await check("Make → Model → Vehicle reads the durable Ocean-preserving vehic
   ];
   vehicles[1].vehicleKey = "mercedes-w205-m274";
   vehicles[2].vehicleKey = "mercedes-w205-m274-b";
-  await store.save(SHOP, { builtAt: 1, count: 3, vehicles });
+  await store.save(SHOP, cacheOf(vehicles));
   const idx = await getVehicleIndex({
     admin: { graphql: async () => { throw new Error("no shopify"); } },
     shopDomain: SHOP,
@@ -187,11 +201,7 @@ await check("Make → Model → Vehicle reads the durable Ocean-preserving vehic
 await check("product GET reads durable index and does not rebuild Shopify vehicles", async () => {
   const store = memoryStore();
   setDurableVehicleIndexStoreForTests(store);
-  await store.save(SHOP, {
-    builtAt: 1,
-    count: 3792,
-    vehicles: Array.from({ length: 3792 }, (_, i) => row(i + 1)),
-  });
+  await store.save(SHOP, cacheOf(Array.from({ length: 3792 }, (_, i) => row(i + 1))));
   const catalog: CatalogIndexCache = {
     builtAt: 1,
     categories: [

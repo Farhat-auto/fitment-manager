@@ -46,15 +46,22 @@ import {
 import {
   getVehicleIndex,
   indexSummary,
+  listGenerations,
   listMakes,
   listModels,
+  refreshVehicleIndex,
   vehiclesForMakeModel,
+  vehiclesForMakeModelGeneration,
 } from "../vehicles/vehicleIndex.server";
 import {
+  countsByMakeFromRows,
+  engineLabelFromRow,
+  listGenerationsFromRows,
   listMakesFromRows,
   listModelsFromRows,
   vehicleIndexIsReady,
   vehiclesForMakeModelFromRows,
+  vehiclesForMakeModelGenerationFromRows,
   type VehicleIndexRow,
 } from "../vehicles/vehicleIndexQuery";
 import { syncProductCatalogClassificationDerivatives } from "../utils/catalogClassificationTags.server";
@@ -64,6 +71,9 @@ import {
   upsertProductFitmentRows,
 } from "../fitment/fitmentKeys.server";
 import { appHref } from "../embedded-nav";
+
+/** Vehicle-index refresh paginates the full Shopify vehicle catalogue. */
+export const maxDuration = 60;
 
 function fieldValue(x: any): string {
   const v = x?.value;
@@ -232,8 +242,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     if (intent === "vehicle_index_refresh") {
-      // Controlled background/index operation (runs in this request).
-      const idx = await getVehicleIndex({ admin, shopDomain: shop_domain, refresh: true });
+      const result = await refreshVehicleIndex({ admin, shopDomain: shop_domain });
+      if (!result.ok) {
+        return json(
+          {
+            ok: false,
+            error: result.error || "Vehicle index refresh was incomplete and was not saved.",
+            keptPrevious: result.keptPrevious,
+            index: indexSummary(result.cache),
+            makes: result.cache?.vehicles?.length ? listMakes(result.cache) : [],
+            countsByMake: result.cache?.vehicles?.length ? countsByMakeFromRows(result.cache.vehicles) : {},
+          },
+          { status: 409 },
+        );
+      }
+      const idx = result.cache;
       if (!idx?.vehicles?.length) {
         return json({ ok: false, error: "Vehicle index refresh failed. Try again in a moment." }, { status: 500 });
       }
@@ -241,7 +264,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         ok: true,
         index: indexSummary(idx),
         makes: listMakes(idx),
-        vehicles: idx.vehicles,
+        countsByMake: countsByMakeFromRows(idx.vehicles),
       });
     }
 
@@ -269,7 +292,41 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (!idx?.vehicles?.length) {
         return json({ ok: false, error: "Vehicle index is not built yet.", needsRefresh: true }, { status: 409 });
       }
-      const rows = make && model ? vehiclesForMakeModel(idx, make, model) : [];
+      const generations = make && model ? listGenerations(idx, make, model) : [];
+      const rows =
+        make && model && generations.length <= 1 ? vehiclesForMakeModel(idx, make, model) : [];
+      return json({
+        ok: true,
+        generations,
+        rows,
+        index: indexSummary(idx),
+      });
+    }
+
+    if (intent === "index_generations") {
+      const make = String(fd.get("make") || "").trim();
+      const model = String(fd.get("model") || "").trim();
+      const idx = await getVehicleIndex({ admin, shopDomain: shop_domain, refresh: false });
+      if (!idx?.vehicles?.length) {
+        return json({ ok: false, error: "Vehicle index is not built yet.", needsRefresh: true }, { status: 409 });
+      }
+      return json({
+        ok: true,
+        generations: make && model ? listGenerations(idx, make, model) : [],
+        index: indexSummary(idx),
+      });
+    }
+
+    if (intent === "index_make_model_generation") {
+      const make = String(fd.get("make") || "").trim();
+      const model = String(fd.get("model") || "").trim();
+      const generation = String(fd.get("generation") || "").trim();
+      const idx = await getVehicleIndex({ admin, shopDomain: shop_domain, refresh: false });
+      if (!idx?.vehicles?.length) {
+        return json({ ok: false, error: "Vehicle index is not built yet.", needsRefresh: true }, { status: 409 });
+      }
+      const rows =
+        make && model && generation ? vehiclesForMakeModelGeneration(idx, make, model, generation) : [];
       return json({
         ok: true,
         rows,
@@ -583,6 +640,8 @@ export default function FitmentEditor() {
 
   const [filterModel, setFilterModel] = React.useState("");
   const [modelOptions, setModelOptions] = React.useState<string[]>([]);
+  const [filterGeneration, setFilterGeneration] = React.useState("");
+  const [generationOptions, setGenerationOptions] = React.useState<string[]>([]);
 
   const [vehicles, setVehicles] = React.useState<any[]>([]);
   const [makeModelVehicles, setMakeModelVehicles] = React.useState<any[]>([]);
@@ -596,6 +655,7 @@ export default function FitmentEditor() {
       : null,
   );
   const modelsByMakeCacheRef = React.useRef<Map<string, string[]>>(new Map());
+  const generationsByMakeModelCacheRef = React.useRef<Map<string, string[]>>(new Map());
   const vehiclesByMakeModelCacheRef = React.useRef<Map<string, VehicleSearchNode[]>>(new Map());
   const makeModelRetryOnceRef = React.useRef<Map<string, boolean>>(new Map());
 
@@ -666,8 +726,8 @@ export default function FitmentEditor() {
   );
   const cachedIndexVehicles = indexVehiclesState;
 
-  const [indexInfo, setIndexInfo] = React.useState<{ builtAt: number; count: number; ready?: boolean }>(
-    () => (vehicleIndex as any) ?? { builtAt: 0, count: 0, ready: false },
+  const [indexInfo, setIndexInfo] = React.useState<{ builtAt: number; count: number; ready?: boolean; complete?: boolean }>(
+    () => (vehicleIndex as any) ?? { builtAt: 0, count: 0, ready: false, complete: false },
   );
   const indexReady = vehicleIndexIsReady({
     ready: indexInfo?.ready,
@@ -747,20 +807,26 @@ export default function FitmentEditor() {
       if (key) modelsByMakeCacheRef.current.set(key, models);
       setModelOptions(models);
     }
+    if (Array.isArray(d.generations)) {
+      const generations = d.generations.map((x: any) => String(x || "").trim()).filter(Boolean);
+      setGenerationOptions(generations);
+    }
   }, [facetFetcher.data]);
 
   React.useEffect(() => {
     const d: any = indexFetcher.data;
-    if (!d || d.ok !== true) return;
+    if (!d) return;
+    if (d.ok !== true) {
+      if (d.error) setRateLimitMsg(String(d.error));
+      if (d.index) setIndexInfo(d.index);
+      return;
+    }
     if (d.index) setIndexInfo(d.index);
     if (Array.isArray(d.makes)) {
       const makes = d.makes.map((x: any) => String(x || "").trim()).filter(Boolean);
       makesCacheRef.current = makes;
       setMakeOptions(makes);
       setRateLimitMsg(null);
-    }
-    if (Array.isArray(d.vehicles)) {
-      setIndexVehiclesState(d.vehicles as VehicleIndexRow[]);
     }
   }, [indexFetcher.data]);
 
@@ -769,12 +835,17 @@ export default function FitmentEditor() {
     const d: any = makeModelFetcher.data;
     if (!d) return;
     if (d.ok === true && Array.isArray(d.rows)) {
-      const key = makeModelKey(filterMake, filterModel);
+      const key = makeModelKey(filterMake, filterModel) + `::${filterGeneration}`;
       const rows = (d.rows as any[]).filter(Boolean);
       vehiclesByMakeModelCacheRef.current.set(key, rows);
       setMakeModelVehicles(rows);
       setRateLimitMsg(null);
       makeModelRetryOnceRef.current.set(key, false);
+      if (Array.isArray(d.generations)) {
+        const generations = d.generations.map((x: any) => String(x || "").trim()).filter(Boolean);
+        generationsByMakeModelCacheRef.current.set(makeModelKey(filterMake, filterModel), generations);
+        setGenerationOptions(generations);
+      }
       return;
     }
     if (d.ok === false && Number(d.status) === 429) {
@@ -971,7 +1042,9 @@ export default function FitmentEditor() {
     (next: string) => {
       setFilterMake(next);
       setFilterModel("");
+      setFilterGeneration("");
       setModelOptions([]);
+      setGenerationOptions([]);
       setVehicles([]);
       setMakeModelVehicles([]);
       if (!next) return;
@@ -992,21 +1065,32 @@ export default function FitmentEditor() {
   const onSelectModel = React.useCallback(
     (next: string) => {
       setFilterModel(next);
+      setFilterGeneration("");
+      setGenerationOptions([]);
       setVehicles([]);
       setMakeModelVehicles([]);
 
       if (filterMake && next) {
         const key = makeModelKey(filterMake, next);
-        const cached = vehiclesByMakeModelCacheRef.current.get(key);
-        if (cached) {
-          setMakeModelVehicles(cached);
+        if (cachedIndexVehicles.length) {
+          const generations = listGenerationsFromRows(cachedIndexVehicles, filterMake, next);
+          generationsByMakeModelCacheRef.current.set(key, generations);
+          setGenerationOptions(generations);
+          if (generations.length === 1) {
+            setFilterGeneration(generations[0]);
+            const rows = vehiclesForMakeModelGenerationFromRows(
+              cachedIndexVehicles,
+              filterMake,
+              next,
+              generations[0],
+            );
+            setMakeModelVehicles(rows);
+          }
           return;
         }
-        if (cachedIndexVehicles.length) {
-          const rows = vehiclesForMakeModelFromRows(cachedIndexVehicles, filterMake, next);
-          vehiclesByMakeModelCacheRef.current.set(key, rows as any);
-          setMakeModelVehicles(rows);
-          return;
+        const cachedGens = generationsByMakeModelCacheRef.current.get(key);
+        if (cachedGens) {
+          setGenerationOptions(cachedGens);
         }
         const fd = new FormData();
         fd.set("_intent", "index_make_model");
@@ -1018,6 +1102,34 @@ export default function FitmentEditor() {
     [cachedIndexVehicles, filterMake, makeModelFetcher],
   );
 
+  const onSelectGeneration = React.useCallback(
+    (next: string) => {
+      setFilterGeneration(next);
+      setVehicles([]);
+      setMakeModelVehicles([]);
+      if (!next || !filterMake || !filterModel) return;
+      const key = `${makeModelKey(filterMake, filterModel)}::${next}`;
+      const cached = vehiclesByMakeModelCacheRef.current.get(key);
+      if (cached) {
+        setMakeModelVehicles(cached);
+        return;
+      }
+      if (cachedIndexVehicles.length) {
+        const rows = vehiclesForMakeModelGenerationFromRows(cachedIndexVehicles, filterMake, filterModel, next);
+        vehiclesByMakeModelCacheRef.current.set(key, rows as any);
+        setMakeModelVehicles(rows);
+        return;
+      }
+      const fd = new FormData();
+      fd.set("_intent", "index_make_model_generation");
+      fd.set("make", filterMake);
+      fd.set("model", filterModel);
+      fd.set("generation", next);
+      makeModelFetcher.submit(fd, { method: "post" });
+    },
+    [cachedIndexVehicles, filterMake, filterModel, makeModelFetcher],
+  );
+
   const shownCount = vehicles.length;
   const allVisibleSelected =
     shownCount > 0 && vehicles.every((v) => v?.id && selectedVehicleGidSet.has(String(v.id)));
@@ -1027,11 +1139,26 @@ export default function FitmentEditor() {
       .map((v: any) => {
         const gid = String(v?.gid ?? v?.id ?? "").trim();
         if (!gid) return null;
-        const dn = String(v?.displayName ?? v?.display_name ?? "").trim();
-        const vk = String(v?.vehicleKey ?? v?.vehicle_key ?? "").trim();
-        const handle = String(v?.handle ?? "").trim();
-        const label = dn || vk || handle || gid;
-        return { value: gid, label };
+        const row = v as VehicleIndexRow;
+        const label = engineLabelFromRow({
+          gid,
+          handle: String(v?.handle ?? ""),
+          vehicleKey: String(v?.vehicleKey ?? v?.vehicle_key ?? ""),
+          displayName: String(v?.displayName ?? v?.display_name ?? ""),
+          makeName: String(v?.makeName ?? ""),
+          modelName: String(v?.modelName ?? ""),
+          generationName: String(v?.generationName ?? ""),
+          series: String(v?.series ?? ""),
+          chassis: String(v?.chassis ?? ""),
+          engineName: String(v?.engineName ?? ""),
+          engineCode: String(v?.engineCode ?? ""),
+          variant: String(v?.variant ?? ""),
+          yearFrom: String(v?.yearFrom ?? ""),
+          yearTo: String(v?.yearTo ?? ""),
+          bodyType: String(v?.bodyType ?? ""),
+          power: String(v?.power ?? ""),
+        });
+        return { value: gid, label, vehicleKey: row.vehicleKey };
       })
       .filter(Boolean) as Array<{ value: string; label: string }>;
 
@@ -1263,7 +1390,11 @@ export default function FitmentEditor() {
                 <Text as="p" variant="bodySm" tone="subdued">
                   Vehicle index:{" "}
                   {indexReady
-                    ? `${indexInfo.count} vehicles cached`
+                    ? `${indexInfo.count} vehicles cached · ${makeOptions.length} makes${
+                        (indexInfo as any).complete === false && Number((indexInfo as any).pageCount || 0) > 0
+                          ? " (incomplete)"
+                          : ""
+                      }`
                     : "not built"}
                 </Text>
                 {indexReady && indexInfo.builtAt ? (
@@ -1492,19 +1623,38 @@ export default function FitmentEditor() {
                 disabled={isBusy || !filterMake || !indexReady}
                 helpText={!indexReady ? "Build the vehicle index first." : facetFetcher.state !== "idle" && !!filterMake && !filterModel ? "Loading models..." : undefined}
               />
+              <Select
+                label="Generation / type"
+                options={[
+                  { label: generationOptions.length ? "Select generation" : "Any", value: "" },
+                  ...generationOptions.map((v) => ({ label: v, value: v })),
+                ]}
+                value={filterGeneration}
+                onChange={onSelectGeneration}
+                disabled={isBusy || !filterModel || !indexReady || generationOptions.length === 0}
+                helpText={
+                  !filterModel
+                    ? "Select a model first."
+                    : generationOptions.length === 0
+                      ? "No generation/type fields in source for this model."
+                      : undefined
+                }
+              />
               <VehicleCheckboxPicker
-                label="Vehicle"
+                label="Engine / exact vehicle"
                 options={vehicleOptions}
                 selectedVehicleGids={selectedVehicleGids}
                 setSelectedVehicleGids={setSelectedVehicleGids}
-                disabled={isBusy || !filterModel}
+                disabled={isBusy || !filterModel || (generationOptions.length > 0 && !filterGeneration)}
               />
               <Button
                 variant="secondary"
                 onClick={() => {
                   setFilterMake("");
                   setFilterModel("");
+                  setFilterGeneration("");
                   setModelOptions([]);
+                  setGenerationOptions([]);
                   setVehicles([]);
                   setMakeModelVehicles([]);
                 }}
