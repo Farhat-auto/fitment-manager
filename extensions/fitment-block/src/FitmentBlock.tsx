@@ -1,3 +1,11 @@
+/**
+ * LEGACY Admin product block.
+ *
+ * Do not add new compatibility here. Forward CAR FITMENT lives in
+ * extensions/car-fitment and writes Ocean product_fitment → vehicle_id.
+ * fitment.vehicles / custom.compatible_vehicles / vehicle metaobjects are
+ * retained read-only.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
