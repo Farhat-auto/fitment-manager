@@ -55,9 +55,10 @@ function FitmentBlock() {
 
   const manageUrl = useMemo(() => {
     const numericId = extractNumericProductId(productId);
+    // Canonical app route only. Shopify Admin prepends /apps/<handle>.
     return numericId
-      ? `/apps/fitment-manager-2/app/products/${encodeURIComponent(numericId)}`
-      : `/apps/fitment-manager-2/app/products`;
+      ? `/app/products/${encodeURIComponent(numericId)}`
+      : `/app/products`;
   }, [productId]);
 
   const count = vehicles.length;

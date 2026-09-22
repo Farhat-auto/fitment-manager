@@ -3,6 +3,7 @@ import { json } from "@remix-run/node";
 import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
 import { Page, Card, BlockStack, Text, Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
+import { appHref } from "../embedded-nav";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.admin(request);
@@ -20,7 +21,7 @@ export default function SettingsPage() {
       title="Settings"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">

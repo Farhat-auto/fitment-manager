@@ -53,6 +53,7 @@ import {
   setShopifyFitmentKeysMetafield,
   upsertProductFitmentRows,
 } from "../fitment/fitmentKeys.server";
+import { appHref } from "../embedded-nav";
 
 function fieldValue(x: any): string {
   const v = x?.value;
@@ -158,7 +159,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (productHandle === "validation") {
     const url = new URL(request.url);
-    return redirect(`/app/fitment-validation${url.search}`);
+    return redirect(appHref("/app/fitment-validation", url.search));
   }
 
   const shop_domain =
@@ -914,7 +915,7 @@ export default function FitmentEditor() {
     const d: any = saveFetcher.data;
     if (!d || d.ok !== true) return;
     // After successful save, return to Products list so the loader re-reads fitment.vehicles.
-    navigate(`/app/products${location.search || ""}`);
+    navigate(appHref("/app/products", location.search || ""));
   }, [saveFetcher.data, navigate, location.search]);
 
   // Cascading behavior: reset downstream and progressively load the next options.
@@ -1163,7 +1164,7 @@ export default function FitmentEditor() {
       subtitle={`Manage Fitment: ${product.title || product.handle}`}
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">
@@ -1578,7 +1579,7 @@ export function ErrorBoundary() {
       title="Manage Product Fitment — error"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate("/app/products"),
+        onAction: () => navigate(appHref("/app/products")),
       }}
     >
       <Card>

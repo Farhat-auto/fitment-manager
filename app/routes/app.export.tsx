@@ -19,6 +19,7 @@ import {
 import { authenticate } from "../shopify.server";
 import { GET_PRODUCTS_FOR_FITMENT_ADMIN, LIST_METAOBJECTS_BY_TYPE } from "../graphql/fitment";
 import { paginateMetaobjects } from "../utils/paginateMetaobjects.server";
+import { appHref } from "../embedded-nav";
 
 function csvEscape(value: unknown): string {
   const s = String(value ?? "");
@@ -636,7 +637,7 @@ export default function ExportCsvPage() {
       title="Export CSV"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">

@@ -24,6 +24,7 @@ import {
   Badge,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
+import { appHref } from "../embedded-nav";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.admin(request);
@@ -473,7 +474,7 @@ export default function ImagesPage() {
   function selectProduct(productId: string) {
     const sp = new URLSearchParams(location.search);
     sp.set("productId", productId);
-    navigate(`/app/images?${sp.toString()}`);
+    navigate(appHref("/app/images", `?${sp.toString()}`));
   }
 
   function saveAlt(imageId: string) {
@@ -583,7 +584,7 @@ export default function ImagesPage() {
       title="Image Manager"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">

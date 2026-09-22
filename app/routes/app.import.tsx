@@ -19,6 +19,7 @@ import { authenticate } from "../shopify.server";
 import { SEARCH_VEHICLES, SET_FITMENT_VEHICLES } from "../graphql/fitment";
 import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 import { resolveShopDomain } from "../fitment/fitment.server";
+import { appHref } from "../embedded-nav";
 
 type CsvRow = {
   product_id?: string;
@@ -711,7 +712,7 @@ export default function ImportCsv() {
       title="Bulk import (CSV)"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
       primaryAction={{
         content: counts ? `Import ${counts.ready} rows` : "Import",

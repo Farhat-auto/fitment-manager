@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { appHref } from "../embedded-nav";
 
 /**
  * Many people try /app/fitment/validation, which otherwise matches fitment/:productHandle
@@ -9,8 +10,7 @@ import { authenticate } from "../shopify.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.admin(request);
   const url = new URL(request.url);
-  const dest = `/app/fitment-validation${url.search}`;
-  return redirect(dest);
+  return redirect(appHref("/app/fitment-validation", url.search));
 }
 
 export default function FitmentValidationRedirect() {

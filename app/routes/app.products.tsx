@@ -27,6 +27,7 @@ import {
   catalogSystemGroupIdFromSubcategoryNode,
   parentCatalogCategoryIdFromSystemGroupNode,
 } from "../utils/catalogMetaobjectParents.server";
+import { appHref } from "../embedded-nav";
 
 type Option = { value: string; label: string };
 
@@ -760,7 +761,7 @@ export default function Products() {
       // Reset pagination cursor on filter changes.
       sp.delete("after");
       sp.delete("meta");
-      navigate(`/app/products?${sp.toString()}`);
+      navigate(appHref("/app/products", `?${sp.toString()}`));
     },
     [location.search, navigate, query, category, systemGroup, subcategory],
   );
@@ -955,7 +956,7 @@ export default function Products() {
               Export CSV
             </Button>
 
-            <RemixLink to={`../import${location.search || ""}`} style={{ textDecoration: "none" }}>
+            <RemixLink to={appHref("/app/import", location.search || "")} style={{ textDecoration: "none" }}>
               <Button variant="primary">Import CSV</Button>
             </RemixLink>
           </InlineStack>
@@ -1053,7 +1054,7 @@ export default function Products() {
                     const sp = new URLSearchParams(location.search);
                     if (cursor) sp.set("after", cursor);
                     sp.set("meta", "0");
-                    moreFetcher.load(`/app/products?${sp.toString()}`);
+                    moreFetcher.load(appHref("/app/products", `?${sp.toString()}`));
                   }}
                   disabled={moreFetcher.state !== "idle"}
                   loading={moreFetcher.state !== "idle"}
@@ -1136,7 +1137,7 @@ export default function Products() {
 
                     <InlineStack gap="200" wrap>
                       <RemixLink
-                        to={`../fitment/${encodeURIComponent(p.handle)}${location.search || ""}`}
+                        to={appHref(`/app/fitment/${encodeURIComponent(p.handle)}`, location.search || "")}
                         style={{ textDecoration: "none" }}
                       >
                         <Button variant="primary">Manage Fitment</Button>
@@ -1150,7 +1151,7 @@ export default function Products() {
                         Update Product
                       </Button>
                       <RemixLink
-                        to={`../images?productId=${encodeURIComponent(String(p?.id ?? ""))}${location.search || ""}`}
+                        to={appHref("/app/images", `productId=${encodeURIComponent(String(p?.id ?? ""))}${location.search ? `&${location.search.replace(/^\?/, "")}` : ""}`)}
                         style={{ textDecoration: "none" }}
                       >
                         <Button>Upload Images</Button>

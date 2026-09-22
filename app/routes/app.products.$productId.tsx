@@ -7,6 +7,7 @@ import { CarFitmentPanel } from "../components/CarFitment";
 import { oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { countMetafields, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
+import { appHref } from "../embedded-nav";
 
 function normalizeProductId(raw: string): string {
   const value = String(raw || "").trim();
@@ -88,7 +89,7 @@ export default function ProductCarFitment() {
       title="CAR FITMENT"
       backAction={{
         content: "Back to Products",
-        onAction: () => navigate(`/app/products${location.search || ""}`),
+        onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">
