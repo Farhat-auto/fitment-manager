@@ -1,24 +1,19 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import {
+  indexSummaryFromCache,
+  listMakesFromRows,
+  listModelsFromRows,
+  vehiclesForMakeModelFromRows,
+  type VehicleIndexRow as VehicleIndexRowBase,
+} from "./vehicleIndexQuery.ts";
 
 /** Return value of `authenticate.admin(request).admin` — GraphQL admin client. */
 export type ShopifyAdmin = {
   graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response>;
 };
 
-export type VehicleIndexRow = {
-  gid: string;
-  handle: string;
-  vehicleKey: string;
-  displayName: string;
-  makeName: string;
-  modelName: string;
-  engineName: string;
-  variant: string;
-  yearFrom: string;
-  yearTo: string;
-  bodyType: string;
-};
+export type VehicleIndexRow = VehicleIndexRowBase;
 
 type VehicleIndexCache = {
   builtAt: number;
@@ -235,35 +230,19 @@ export async function getVehicleIndex(params: {
 }
 
 export function indexSummary(cache: VehicleIndexCache | null) {
-  return cache
-    ? { builtAt: cache.builtAt, count: cache.count }
-    : { builtAt: 0, count: 0 };
+  return indexSummaryFromCache(cache);
 }
 
 export function listMakes(cache: VehicleIndexCache): string[] {
-  const seen = new Set<string>();
-  for (const v of cache.vehicles) {
-    const m = norm(v.makeName);
-    if (m) seen.add(m);
-  }
-  return Array.from(seen).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  return listMakesFromRows(cache.vehicles);
 }
 
 export function listModels(cache: VehicleIndexCache, make: string): string[] {
-  const makeK = normKey(make);
-  const seen = new Set<string>();
-  for (const v of cache.vehicles) {
-    if (normKey(v.makeName) !== makeK) continue;
-    const m = norm(v.modelName);
-    if (m) seen.add(m);
-  }
-  return Array.from(seen).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  return listModelsFromRows(cache.vehicles, make);
 }
 
 export function vehiclesForMakeModel(cache: VehicleIndexCache, make: string, model: string): VehicleIndexRow[] {
-  const makeK = normKey(make);
-  const modelK = normKey(model);
-  return cache.vehicles.filter((v) => normKey(v.makeName) === makeK && normKey(v.modelName) === modelK);
+  return vehiclesForMakeModelFromRows(cache.vehicles, make, model);
 }
 
 export function facetEngines(rows: VehicleIndexRow[]): string[] {

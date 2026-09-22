@@ -10,7 +10,8 @@
 import { GET_PRODUCT_FOR_FITMENT_PAGE } from "../graphql/fitment.ts";
 import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server.ts";
 import { adminGraphqlJson, isShopifyThrottled, type ShopifyGraphqlClient } from "../utils/shopifyGraphql.server.ts";
-import { getVehicleIndex, indexSummary } from "../vehicles/vehicleIndex.server.ts";
+import { getVehicleIndex, indexSummary, listMakes } from "../vehicles/vehicleIndex.server.ts";
+import type { VehicleIndexRow, VehicleIndexSummary } from "../vehicles/vehicleIndexQuery.ts";
 
 export type FitmentRouteProduct = {
   id: string;
@@ -25,7 +26,9 @@ export type FitmentRouteProduct = {
 export type FitmentRoutePayload = {
   shop_domain: string;
   product: FitmentRouteProduct;
-  vehicleIndex: { builtAt: number; count: number };
+  vehicleIndex: VehicleIndexSummary;
+  makes: string[];
+  indexVehicles: VehicleIndexRow[];
   classification: {
     category: { value: string; label: string };
     systemGroup: { value: string; label: string };
@@ -74,7 +77,9 @@ export function emptyFitmentRoutePayload(params: {
   return {
     shop_domain: params.shopDomain,
     product: params.product ?? emptyProduct(params.productHandle),
-    vehicleIndex: { builtAt: 0, count: 0 },
+    vehicleIndex: { builtAt: 0, count: 0, ready: false },
+    makes: [],
+    indexVehicles: [],
     classification: emptyClassification(),
     classificationOptions: { categories: [] },
     selectedVehicles: [],
@@ -180,15 +185,14 @@ export async function loadFitmentRouteData(params: {
     },
   };
 
-  // Vehicle index is read-only cache here. Never rebuild the Shopify vehicle
-  // catalogue while opening one product page (that is what exhausted the bucket).
-  const vehicleIndex = indexSummary(
-    await getVehicleIndex({
-      admin: params.admin,
-      shopDomain,
-      refresh: false,
-    }),
-  );
+  const idx = await getVehicleIndex({
+    admin: params.admin,
+    shopDomain,
+    refresh: false,
+  });
+  const vehicleIndex = indexSummary(idx);
+  const makes = idx?.vehicles?.length ? listMakes(idx) : [];
+  const indexVehicles = idx?.vehicles?.length ? idx.vehicles : [];
 
   let categoryOptions: Array<{ value: string; label: string }> = [];
   let catalogOptionsIncomplete = false;
@@ -224,6 +228,8 @@ export async function loadFitmentRouteData(params: {
       shop_domain: shopDomain,
       product,
       vehicleIndex,
+      makes,
+      indexVehicles,
       classification,
       classificationOptions: { categories: categoryOptions },
       selectedVehicles,

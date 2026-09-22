@@ -216,6 +216,9 @@ await check("Fitment route THROTTLED on the product query fails closed and does 
   assert.deepEqual(loaded.payload.selectedVehicles, []);
   assert.equal(loaded.payload.product.id, "");
   assert.equal(loaded.payload.product.handle, PRODUCT.handle);
+  assert.equal(loaded.payload.vehicleIndex.ready, false);
+  assert.deepEqual(loaded.payload.makes, []);
+  assert.deepEqual(loaded.payload.indexVehicles, []);
 });
 
 await check("Fitment route loader catch shape is HTTP 200 payload, not a thrown GraphqlQueryError", async () => {

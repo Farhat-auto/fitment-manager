@@ -41,6 +41,8 @@ import { isShopifyThrottled } from "../utils/shopifyGraphql.server";
 import {
   catalogSystemGroupIdFromSubcategoryNode,
   parentCatalogCategoryIdFromSystemGroupNode,
+  subcategoriesForSystemGroup,
+  systemGroupsForCategory,
 } from "../utils/catalogMetaobjectParents.server";
 import {
   getVehicleIndex,
@@ -49,6 +51,13 @@ import {
   listModels,
   vehiclesForMakeModel,
 } from "../vehicles/vehicleIndex.server";
+import {
+  listMakesFromRows,
+  listModelsFromRows,
+  vehicleIndexIsReady,
+  vehiclesForMakeModelFromRows,
+  type VehicleIndexRow,
+} from "../vehicles/vehicleIndexQuery";
 import { syncProductCatalogClassificationDerivatives } from "../utils/catalogClassificationTags.server";
 import {
   resolveVehicleKeysFromMetaobjectGids,
@@ -135,6 +144,17 @@ function filterSpuriousCatalogRows<T extends Opt>(rows: T[] | undefined): T[] {
   });
 }
 
+function withCurrentSelectValue(
+  options: Array<{ label: string; value: string }>,
+  value: string,
+  label: string,
+): Array<{ label: string; value: string }> {
+  const current = String(value || "").trim();
+  if (!current) return options;
+  if (options.some((o) => o.value === current)) return options;
+  return [...options, { value: current, label: String(label || current).trim() || current }];
+}
+
 function metaobjectFieldValue(node: any, key: string): string {
   const fields: any[] = Array.isArray(node?.fields) ? node.fields : [];
   const f = fields.find((x) => String(x?.key ?? "") === key);
@@ -216,7 +236,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (!idx?.vehicles?.length) {
         return json({ ok: false, error: "Vehicle index refresh failed. Try again in a moment." }, { status: 500 });
       }
-      return json({ ok: true, index: indexSummary(idx) });
+      return json({
+        ok: true,
+        index: indexSummary(idx),
+        makes: listMakes(idx),
+        vehicles: idx.vehicles,
+      });
     }
 
     if (intent === "index_makes") {
@@ -300,7 +325,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         admin,
         shopDomain: shop_domain,
         type: "catalog_system_group",
-        mode: "fields",
+        mode: "system_groups",
       });
       if (listed.throttled) {
         return json(
@@ -324,15 +349,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .filter(Boolean) as Array<{ value: string; label: string; parentCategoryId: string }>;
 
       const storeHasParentLinks = allRows.some((r) => !!String(r.parentCategoryId || "").trim());
-      /**
-       * Strict cascade: only show system groups whose parent category matches the selected category.
-       * If the store has no parent links at all, return none (admin must link metaobjects in Custom Data).
-       */
-      const systemGroups = storeHasParentLinks
-        ? allRows
-            .filter((r) => String(r.parentCategoryId || "").trim() === category)
-            .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }))
-        : [];
+      const systemGroups = systemGroupsForCategory(allRows, category).sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }),
+      );
 
       return json({
         ok: true,
@@ -353,7 +372,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         admin,
         shopDomain: shop_domain,
         type: "catalog_subcategory",
-        mode: "fields",
+        mode: "subcategories",
       });
       if (listed.throttled) {
         return json(
@@ -377,11 +396,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .filter(Boolean) as Array<{ value: string; label: string; systemGroupId: string }>;
 
       const storeHasSystemGroupLinks = allRows.some((r) => !!String(r.systemGroupId || "").trim());
-      const subcategories = storeHasSystemGroupLinks
-        ? allRows
-            .filter((r) => String(r.systemGroupId || "").trim() === systemGroup)
-            .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }))
-        : [];
+      const subcategories = subcategoriesForSystemGroup(allRows, systemGroup).sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }),
+      );
 
       return json({
         ok: true,
@@ -546,6 +563,8 @@ export default function FitmentEditor() {
     classification,
     classificationOptions,
     vehicleIndex,
+    makes: loaderMakes,
+    indexVehicles: loaderIndexVehicles,
     shopifyThrottled,
     compatibilityUnavailable,
   } = useLoaderData<typeof loader>();
@@ -565,7 +584,9 @@ export default function FitmentEditor() {
 
   // Progressive filter state/options.
   const [filterMake, setFilterMake] = React.useState("");
-  const [makeOptions, setMakeOptions] = React.useState<string[]>([]);
+  const [makeOptions, setMakeOptions] = React.useState<string[]>(() =>
+    Array.isArray(loaderMakes) ? loaderMakes.map((x) => String(x || "").trim()).filter(Boolean) : [],
+  );
 
   const [filterModel, setFilterModel] = React.useState("");
   const [modelOptions, setModelOptions] = React.useState<string[]>([]);
@@ -576,7 +597,11 @@ export default function FitmentEditor() {
   const [rateLimitMsg, setRateLimitMsg] = React.useState<string | null>(null);
 
   // In-memory caches (per page session).
-  const makesCacheRef = React.useRef<string[] | null>(null);
+  const makesCacheRef = React.useRef<string[] | null>(
+    Array.isArray(loaderMakes) && loaderMakes.length
+      ? loaderMakes.map((x) => String(x || "").trim()).filter(Boolean)
+      : null,
+  );
   const modelsByMakeCacheRef = React.useRef<Map<string, string[]>>(new Map());
   const vehiclesByMakeModelCacheRef = React.useRef<Map<string, VehicleSearchNode[]>>(new Map());
   const makeModelRetryOnceRef = React.useRef<Map<string, boolean>>(new Map());
@@ -643,11 +668,35 @@ export default function FitmentEditor() {
   }
 
 
-  const [indexInfo, setIndexInfo] = React.useState<{ builtAt: number; count: number }>(() => (vehicleIndex as any) ?? { builtAt: 0, count: 0 });
-  const indexReady = !!indexInfo?.count;
+  const [indexVehiclesState, setIndexVehiclesState] = React.useState<VehicleIndexRow[]>(() =>
+    Array.isArray(loaderIndexVehicles) ? (loaderIndexVehicles as VehicleIndexRow[]) : [],
+  );
+  const cachedIndexVehicles = indexVehiclesState;
 
-  // Page load: read Make options from cached index (no Shopify).
+  const [indexInfo, setIndexInfo] = React.useState<{ builtAt: number; count: number; ready?: boolean }>(
+    () => (vehicleIndex as any) ?? { builtAt: 0, count: 0, ready: false },
+  );
+  const indexReady = vehicleIndexIsReady({
+    ready: indexInfo?.ready,
+    count: indexInfo?.count,
+    vehicles: cachedIndexVehicles,
+    makes: makeOptions,
+  });
+
+  // Page load: use cached makes from the loader. Do not POST index_makes when
+  // the cached index is already ready — that 409 is what produced "not built"
+  // next to "3792 vehicles cached".
   React.useEffect(() => {
+    if (indexReady && makeOptions.length) {
+      makesCacheRef.current = makeOptions;
+      return;
+    }
+    if (indexReady && cachedIndexVehicles.length) {
+      const makes = listMakesFromRows(cachedIndexVehicles);
+      makesCacheRef.current = makes;
+      setMakeOptions(makes);
+      return;
+    }
     const fd = new FormData();
     fd.set("_intent", "index_makes");
     facetFetcher.submit(fd, { method: "post" });
@@ -682,6 +731,16 @@ export default function FitmentEditor() {
     const d: any = facetFetcher.data;
     if (!d) return;
     if (d.ok === false && d.needsRefresh) {
+      if (
+        vehicleIndexIsReady({
+          ready: indexInfo?.ready,
+          count: indexInfo?.count,
+          vehicles: cachedIndexVehicles,
+          makes: makeOptions,
+        })
+      ) {
+        return;
+      }
       setRateLimitMsg("Vehicle index is not built yet. Click Refresh Vehicle Index.");
       return;
     }
@@ -698,7 +757,22 @@ export default function FitmentEditor() {
       if (key) modelsByMakeCacheRef.current.set(key, models);
       setModelOptions(models);
     }
-  }, [facetFetcher.data]);
+  }, [facetFetcher.data, cachedIndexVehicles, indexInfo?.count, indexInfo?.ready, makeOptions]);
+
+  React.useEffect(() => {
+    const d: any = indexFetcher.data;
+    if (!d || d.ok !== true) return;
+    if (d.index) setIndexInfo(d.index);
+    if (Array.isArray(d.makes)) {
+      const makes = d.makes.map((x: any) => String(x || "").trim()).filter(Boolean);
+      makesCacheRef.current = makes;
+      setMakeOptions(makes);
+      setRateLimitMsg(null);
+    }
+    if (Array.isArray(d.vehicles)) {
+      setIndexVehiclesState(d.vehicles as VehicleIndexRow[]);
+    }
+  }, [indexFetcher.data]);
 
   // Consume make+model vehicles fetcher.
   React.useEffect(() => {
@@ -793,24 +867,28 @@ export default function FitmentEditor() {
     }
   }, [allSubcategories, classSystemGroup]);
 
-  /** Clear system group / sub-category when they are not in the strictly filtered lists (avoid invalid saves & Polaris mismatches). */
+  /** Keep current product classification visible while options load or parents fail to list. */
   React.useEffect(() => {
     const sg = String(classSystemGroup || "").trim();
     if (!sg) return;
+    if (!visibleSystemGroups.length) return;
     const ok = visibleSystemGroups.some((g) => g.value === sg);
-    if (!ok) {
+    if (!ok && classificationLinkage.storeHasParentLinks === true && (classificationLinkage.systemGroupsShown ?? 0) > 0) {
       setClassSystemGroup("");
       setClassSubcategory("");
       setAllSubcategories([]);
     }
-  }, [visibleSystemGroups, classSystemGroup]);
+  }, [visibleSystemGroups, classSystemGroup, classificationLinkage.storeHasParentLinks, classificationLinkage.systemGroupsShown]);
 
   React.useEffect(() => {
     const sub = String(classSubcategory || "").trim();
     if (!sub) return;
+    if (!visibleSubcategories.length) return;
     const ok = visibleSubcategories.some((s) => s.value === sub);
-    if (!ok) setClassSubcategory("");
-  }, [visibleSubcategories, classSubcategory]);
+    if (!ok && classificationLinkage.storeHasSystemGroupLinks === true && (classificationLinkage.subcategoriesShown ?? 0) > 0) {
+      setClassSubcategory("");
+    }
+  }, [visibleSubcategories, classSubcategory, classificationLinkage.storeHasSystemGroupLinks, classificationLinkage.subcategoriesShown]);
 
   React.useEffect(() => {
     if (!String(classCategory || "").trim()) setClassificationLinkage({});
@@ -906,14 +984,19 @@ export default function FitmentEditor() {
       setModelOptions([]);
       setVehicles([]);
       setMakeModelVehicles([]);
-      if (next) {
-        const fd = new FormData();
-        fd.set("_intent", "index_models");
-        fd.set("make", next);
-        facetFetcher.submit(fd, { method: "post" });
+      if (!next) return;
+      if (cachedIndexVehicles.length) {
+        const models = listModelsFromRows(cachedIndexVehicles, next);
+        modelsByMakeCacheRef.current.set(next.trim().toLowerCase(), models);
+        setModelOptions(models);
+        return;
       }
+      const fd = new FormData();
+      fd.set("_intent", "index_models");
+      fd.set("make", next);
+      facetFetcher.submit(fd, { method: "post" });
     },
-    [facetFetcher],
+    [cachedIndexVehicles, facetFetcher],
   );
 
   const onSelectModel = React.useCallback(
@@ -929,6 +1012,12 @@ export default function FitmentEditor() {
           setMakeModelVehicles(cached);
           return;
         }
+        if (cachedIndexVehicles.length) {
+          const rows = vehiclesForMakeModelFromRows(cachedIndexVehicles, filterMake, next);
+          vehiclesByMakeModelCacheRef.current.set(key, rows as any);
+          setMakeModelVehicles(rows);
+          return;
+        }
         const fd = new FormData();
         fd.set("_intent", "index_make_model");
         fd.set("make", filterMake);
@@ -936,7 +1025,7 @@ export default function FitmentEditor() {
         makeModelFetcher.submit(fd, { method: "post" });
       }
     },
-    [filterMake, makeModelFetcher],
+    [cachedIndexVehicles, filterMake, makeModelFetcher],
   );
 
   const shownCount = vehicles.length;
@@ -1241,15 +1330,19 @@ export default function FitmentEditor() {
               <InlineStack gap="300" wrap>
                 <Select
                   label="Category"
-                  options={[
-                    { label: "Select category", value: "" },
-                    ...safeArray<any>((classificationOptions as any)?.categories)
-                      .filter((o) => o && (o.value != null || o.label != null))
-                      .map((o: any) => ({
-                        label: String(o.label ?? o.value ?? ""),
-                        value: String(o.value ?? ""),
-                      })),
-                  ]}
+                  options={withCurrentSelectValue(
+                    [
+                      { label: "Select category", value: "" },
+                      ...safeArray<any>((classificationOptions as any)?.categories)
+                        .filter((o) => o && (o.value != null || o.label != null))
+                        .map((o: any) => ({
+                          label: String(o.label ?? o.value ?? ""),
+                          value: String(o.value ?? ""),
+                        })),
+                    ],
+                    classCategory,
+                    String((classification as any)?.category?.label ?? ""),
+                  )}
                   value={classCategory}
                   onChange={(v) => {
                     const next = String(v || "").trim();
@@ -1269,7 +1362,7 @@ export default function FitmentEditor() {
                   helpText={
                     loadingSystemGroups
                       ? "Loading system groups…"
-                      : classCategory && visibleSystemGroups.length === 0
+                      : showSystemGroupLinkageWarning
                         ? "No system groups are linked to this category until metaobject parents are set."
                         : undefined
                   }
@@ -1278,13 +1371,17 @@ export default function FitmentEditor() {
 
                 <Select
                   label="System Group"
-                  options={[
-                    { label: "Select system group", value: "" },
-                    ...visibleSystemGroups.map((o) => ({
-                      label: String(o.label ?? o.value ?? ""),
-                      value: String(o.value ?? ""),
-                    })),
-                  ]}
+                  options={withCurrentSelectValue(
+                    [
+                      { label: "Select system group", value: "" },
+                      ...visibleSystemGroups.map((o) => ({
+                        label: String(o.label ?? o.value ?? ""),
+                        value: String(o.value ?? ""),
+                      })),
+                    ],
+                    classSystemGroup,
+                    String((classification as any)?.systemGroup?.label ?? ""),
+                  )}
                   value={classSystemGroup}
                   onChange={(v) => {
                     const next = String(v || "").trim();
@@ -1301,7 +1398,7 @@ export default function FitmentEditor() {
                   helpText={
                     loadingSubcategories
                       ? "Loading sub-categories…"
-                      : classSystemGroup && visibleSubcategories.length === 0
+                      : showSubcategoryLinkageWarning
                         ? "No sub-categories are linked to this system group until metaobject parents are set."
                         : undefined
                   }
@@ -1310,13 +1407,17 @@ export default function FitmentEditor() {
 
                 <Select
                   label="Sub-category"
-                  options={[
-                    { label: "Select sub-category", value: "" },
-                    ...visibleSubcategories.map((o) => ({
-                      label: String(o.label ?? o.value ?? ""),
-                      value: String(o.value ?? ""),
-                    })),
-                  ]}
+                  options={withCurrentSelectValue(
+                    [
+                      { label: "Select sub-category", value: "" },
+                      ...visibleSubcategories.map((o) => ({
+                        label: String(o.label ?? o.value ?? ""),
+                        value: String(o.value ?? ""),
+                      })),
+                    ],
+                    classSubcategory,
+                    String((classification as any)?.subcategory?.label ?? ""),
+                  )}
                   value={classSubcategory}
                   onChange={(v) => setClassSubcategory(String(v || "").trim())}
                   disabled={!classSystemGroup || classificationFetcher.state !== "idle"}

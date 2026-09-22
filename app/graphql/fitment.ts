@@ -152,6 +152,67 @@ export const LIST_CATALOG_METAOBJECTS = `#graphql
   }
 `;
 
+/**
+ * Theme contract: catalog_system_group.parent_category → catalog_main_category.
+ * Aliased field(key:) only — do not pull every metaobject field (that is what throttled the page).
+ */
+export const LIST_CATALOG_SYSTEM_GROUPS = `#graphql
+  query ListCatalogSystemGroups($first: Int! = 50, $after: String) {
+    metaobjects(type: "catalog_system_group", first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        handle
+        displayName
+        parent_category: field(key: "parent_category") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+        catalog_main_category: field(key: "catalog_main_category") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+        main_category: field(key: "main_category") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Theme contract: catalog_subcategory.parent_group → catalog_system_group.
+ */
+export const LIST_CATALOG_SUBCATEGORIES = `#graphql
+  query ListCatalogSubcategories($first: Int! = 50, $after: String) {
+    metaobjects(type: "catalog_subcategory", first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        handle
+        displayName
+        parent_group: field(key: "parent_group") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+        group: field(key: "group") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+        system_group: field(key: "system_group") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+        catalog_system_group: field(key: "catalog_system_group") {
+          value
+          reference { ... on Metaobject { id type handle } }
+        }
+      }
+    }
+  }
+`;
+
 export const SET_FITMENT_VEHICLES = `#graphql
   mutation SetFitmentVehicles($ownerId: ID!, $value: String!) {
     metafieldsSet(

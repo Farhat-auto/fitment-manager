@@ -4,7 +4,12 @@
  * used to invent product compatibility.
  */
 
-import { LIST_CATALOG_METAOBJECTS, LIST_METAOBJECT_LABELS_BY_TYPE } from "../graphql/fitment.ts";
+import {
+  LIST_CATALOG_METAOBJECTS,
+  LIST_CATALOG_SUBCATEGORIES,
+  LIST_CATALOG_SYSTEM_GROUPS,
+  LIST_METAOBJECT_LABELS_BY_TYPE,
+} from "../graphql/fitment.ts";
 import { paginateMetaobjectsDetailed, type MetaobjectNode } from "./paginateMetaobjects.server.ts";
 import type { ShopifyGraphqlClient } from "./shopifyGraphql.server.ts";
 
@@ -25,7 +30,7 @@ export async function listCatalogMetaobjectsCached(params: {
   admin: ShopifyGraphqlClient;
   shopDomain: string;
   type: string;
-  mode: "labels" | "fields";
+  mode: "labels" | "fields" | "system_groups" | "subcategories";
   sleepFn?: (ms: number) => Promise<void>;
   maxRetries?: number;
 }): Promise<{ nodes: MetaobjectNode[]; throttled: boolean; incomplete: boolean; fromCache: boolean }> {
@@ -35,14 +40,23 @@ export async function listCatalogMetaobjectsCached(params: {
     return { nodes: hit.nodes, throttled: false, incomplete: false, fromCache: true };
   }
 
-  const query = params.mode === "labels" ? LIST_METAOBJECT_LABELS_BY_TYPE : LIST_CATALOG_METAOBJECTS;
+  const query =
+    params.mode === "labels"
+      ? LIST_METAOBJECT_LABELS_BY_TYPE
+      : params.mode === "system_groups"
+        ? LIST_CATALOG_SYSTEM_GROUPS
+        : params.mode === "subcategories"
+          ? LIST_CATALOG_SUBCATEGORIES
+          : LIST_CATALOG_METAOBJECTS;
+
+  const pageSize = params.mode === "labels" ? 25 : 50;
   const result = await paginateMetaobjectsDetailed({
     admin: params.admin,
     query,
-    variables: { type: params.type },
+    variables: params.mode === "system_groups" || params.mode === "subcategories" ? {} : { type: params.type },
     pathToConnection: (d) => d?.metaobjects,
-    pageSize: 25,
-    maxPages: 20,
+    pageSize,
+    maxPages: 30,
     maxRetries: params.maxRetries,
     sleepFn: params.sleepFn,
   });
