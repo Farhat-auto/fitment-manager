@@ -6,10 +6,11 @@ import { SupabaseSessionStorage } from "./sessions/supabaseSessionStorage.server
 
 const sessionStorage = new SupabaseSessionStorage();
 
-export const shopify = shopifyApp({
+const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",
   apiSecretKey: process.env.SHOPIFY_API_SECRET ?? "",
   appUrl: process.env.SHOPIFY_APP_URL ?? "",
+  authPathPrefix: "/auth",
   scopes: (process.env.SCOPES ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -21,5 +22,10 @@ export const shopify = shopifyApp({
   },
 });
 
+export default shopify;
+export { shopify };
+export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
-
+export const unauthenticated = shopify.unauthenticated;
+export const login = shopify.login;
+export const sessionStorageExport = shopify.sessionStorage;

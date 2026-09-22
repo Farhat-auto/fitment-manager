@@ -17,6 +17,7 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { SEARCH_VEHICLES, SET_FITMENT_VEHICLES } from "../graphql/fitment";
+import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 import { resolveShopDomain } from "../fitment/fitment.server";
 
 type CsvRow = {
@@ -541,7 +542,16 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "No rows ready to import", mode: "apply", counts, rows: validatedRows }, { status: 400 });
   }
 
-  // Apply to Shopify metafield fitment.vehicles (no Supabase).
+  // LEGACY: do not add new compatibility to fitment.vehicles / vehicle metaobjects.
+  return json(
+    {
+      ...rejectLegacyVehicleWrite("fitment.vehicles"),
+      mode: "apply",
+      counts,
+      rows: validatedRows,
+    },
+    { status: 409 },
+  );
   for (const [productGid, set] of byProduct.entries()) {
     const value = JSON.stringify(Array.from(set));
     const resp = await admin.graphql(SET_FITMENT_VEHICLES, { variables: { ownerId: productGid, value } });

@@ -33,6 +33,7 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { GET_PRODUCT_FITMENT, LIST_METAOBJECTS_BY_TYPE, SET_FITMENT_VEHICLES } from "../graphql/fitment";
+import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 import { resolveShopDomain } from "../fitment/fitment.server";
 import { paginateMetaobjects } from "../utils/paginateMetaobjects.server";
 import {
@@ -467,6 +468,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // Legacy intents removed.
 
     if (intent === "save_fitment") {
+      return json(rejectLegacyVehicleWrite("fitment.vehicles"), { status: 409 });
       const product_gid = String(fd.get("product_gid") || "").trim();
       const vehicle_gids_raw = String(fd.get("vehicle_gids") || "").trim();
       if (!product_gid) return json({ ok: false, error: "Missing product_gid" }, { status: 400 });
@@ -474,7 +476,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       let vehicleGids: string[] = [];
       try {
         const parsed = JSON.parse(vehicle_gids_raw || "[]");
-        if (Array.isArray(parsed)) vehicleGids = parsed.map((x) => String(x || "")).filter(Boolean);
+        if (Array.isArray(parsed)) vehicleGids = parsed.map((x: unknown) => String(x || "")).filter(Boolean);
       } catch {
         return json({ ok: false, error: "Invalid vehicle_gids" }, { status: 400 });
       }

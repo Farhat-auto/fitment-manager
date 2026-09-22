@@ -1,0 +1,26 @@
+api_version = "2025-10"
+
+[[extensions]]
+name = "t:name"
+handle = "car-fitment"
+type = "ui_extension"
+
+[[extensions.targeting]]
+module = "./src/Block.jsx"
+target = "admin.product-details.block.render"
+
+[[extensions.targeting]]
+module = "./src/ShouldRender.js"
+target = "admin.product-details.block.should-render"
+
+[[extensions.targeting]]
+module = "./src/Action.jsx"
+target = "admin.product-details.action.render"
+
+[[extensions.targeting]]
+module = "./src/ShouldRender.js"
+target = "admin.product-details.action.should-render"
+
+[extensions.capabilities]
+api_access = true
+network_access = true
