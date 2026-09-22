@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
+import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 
 const BodySchema = z.object({
   productId: z.string().min(1),
@@ -62,6 +63,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const { productId, vehicleId } = parsed.data;
   const { admin } = await authenticate.admin(request);
+  void productId;
+  void vehicleId;
+  void admin;
+  return json(rejectLegacyVehicleWrite("fitment.vehicles"), { status: 409 });
 
   const readResponse = await admin.graphql(GET_FITMENT_METAFIELD, {
     variables: { id: productId },
