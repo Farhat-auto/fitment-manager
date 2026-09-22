@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/apps/fitment-manager-2/:path*",
+      "destination": "/:path*"
+    }
+  ]
+}
