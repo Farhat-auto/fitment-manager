@@ -1,10 +1,20 @@
 import { Link, useLocation, useNavigate } from "@remix-run/react";
 import { Page, Card, Text, BlockStack, Banner, Button, InlineStack } from "@shopify/polaris";
 
+function embeddedPath(path: string, search: string) {
+  const qs = new URLSearchParams(search);
+  // Shopify Admin may mount the embedded app under /apps/<handle>. Internal
+  // Remix navigation must stay relative to the app's /app route so that
+  // Shopify's admin prefix is never sent to the Vercel Remix router.
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return `../${path.replace(/^\/+/, "")}${suffix}`;
+}
+
 export default function AppIndex() {
   const location = useLocation();
   const navigate = useNavigate();
-  const qs = location.search || "";
+  const to = (path: string) => embeddedPath(path, location.search || "");
+
   return (
     <Page title="Fitment Manager">
       <BlockStack gap="400">
@@ -24,7 +34,7 @@ export default function AppIndex() {
               Identity is Shopify product ID, variant ID, SKU, or Brand+MPN — never title.
             </Text>
             <InlineStack>
-              <Button variant="primary" onClick={() => navigate(`/app/products${qs}`)}>
+              <Button variant="primary" onClick={() => navigate(to("products"))}>
                 Open products
               </Button>
             </InlineStack>
@@ -39,9 +49,9 @@ export default function AppIndex() {
               compatibility. Use CAR FITMENT instead.
             </Text>
             <InlineStack>
-              <Button onClick={() => navigate(`/app/import${qs}`)}>Legacy import</Button>
-              <Button onClick={() => navigate(`/app/export${qs}`)}>Legacy export</Button>
-              <Link to={`/app/fitment-validation${qs}`} style={{ textDecoration: "none" }}>
+              <Button onClick={() => navigate(to("import"))}>Legacy import</Button>
+              <Button onClick={() => navigate(to("export"))}>Legacy export</Button>
+              <Link to={to("fitment-validation")} style={{ textDecoration: "none" }}>
                 <Button>Legacy validation</Button>
               </Link>
             </InlineStack>
@@ -52,7 +62,7 @@ export default function AppIndex() {
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Image Manager</Text>
             <InlineStack>
-              <Button onClick={() => navigate(`/app/images${qs}`)}>Open</Button>
+              <Button onClick={() => navigate(to("images"))}>Open</Button>
             </InlineStack>
           </BlockStack>
         </Card>
@@ -61,7 +71,7 @@ export default function AppIndex() {
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Settings</Text>
             <InlineStack>
-              <Button onClick={() => navigate(`/app/settings${qs}`)}>Open</Button>
+              <Button onClick={() => navigate(to("settings"))}>Open</Button>
             </InlineStack>
           </BlockStack>
         </Card>
