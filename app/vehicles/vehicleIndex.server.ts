@@ -80,7 +80,7 @@ async function writeDiskCache(shopDomain: string, cache: VehicleIndexCache): Pro
 }
 
 const LIST_VEHICLES_FOR_INDEX = `#graphql
-  query ListVehiclesForIndex($first: Int! = 250, $after: String) {
+  query ListVehiclesForIndex($first: Int! = 25, $after: String) {
     metaobjects(type: "vehicle", first: $first, after: $after) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -163,8 +163,13 @@ export async function buildVehicleIndex(params: {
   let after: string | null = null;
   let hasNext = true;
 
-  while (hasNext) {
-    const resp = await graphqlWithBackoff(params.admin, LIST_VEHICLES_FOR_INDEX, { first: 250, after });
+  const pageSize = 25;
+  const maxPages = 40;
+  let pageCount = 0;
+
+  while (hasNext && pageCount < maxPages) {
+    const resp = await graphqlWithBackoff(params.admin, LIST_VEHICLES_FOR_INDEX, { first: pageSize, after });
+    pageCount += 1;
     const data = await resp.json();
     const conn = data?.data?.metaobjects;
     const nodes: any[] = Array.isArray(conn?.nodes) ? conn.nodes : [];
@@ -217,6 +222,9 @@ export async function getVehicleIndex(params: {
       memCache.set(key, disk);
       return disk;
     }
+    // Cache miss: do not list the whole Shopify vehicle catalogue on a product GET.
+    // Make/Model/Engine options come from this cache only after an explicit refresh.
+    return null;
   }
   try {
     return await buildVehicleIndex({ admin: params.admin, shopDomain: params.shopDomain });

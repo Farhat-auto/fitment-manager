@@ -32,10 +32,12 @@ import {
   AutoSelection,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
-import { GET_PRODUCT_FITMENT, LIST_METAOBJECTS_BY_TYPE, SET_FITMENT_VEHICLES } from "../graphql/fitment";
+import { SET_FITMENT_VEHICLES } from "../graphql/fitment";
 import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 import { resolveShopDomain } from "../fitment/fitment.server";
-import { paginateMetaobjects } from "../utils/paginateMetaobjects.server";
+import { emptyFitmentRoutePayload, loadFitmentRouteData } from "../fitment/fitmentRouteLoad.server";
+import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server";
+import { isShopifyThrottled } from "../utils/shopifyGraphql.server";
 import {
   catalogSystemGroupIdFromSubcategoryNode,
   parentCatalogCategoryIdFromSystemGroupNode,
@@ -166,80 +168,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     String((session as any)?.shop ?? "").trim() || resolveShopDomain(request) || "";
   if (!shop_domain) throw new Response("Missing shop_domain", { status: 400 });
 
-  const resp = await admin.graphql(
-    `#graphql
-      query GetProductIdByHandle($handle: String!) {
-        productByHandle(handle: $handle) {
-          id
-        }
-      }
-    `,
-    { variables: { handle: productHandle } },
-  );
-  const idData = await resp.json();
-  const productId = idData?.data?.productByHandle?.id;
-  if (!productId) throw new Response("Product not found", { status: 404 });
-
-  const fitmentResp = await admin.graphql(GET_PRODUCT_FITMENT, { variables: { id: productId, refsFirst: 250 } });
-  const fitmentJson = await fitmentResp.json();
-  const p = fitmentJson?.data?.product;
-  if (!p) throw new Response("Product not found", { status: 404 });
-
-  const refs = p?.fitmentVehicles?.references?.nodes;
-  const selected = Array.isArray(refs) ? refs : [];
-
-  // Product classification (custom.* metaobject references)
-  const classification = {
-    category: {
-      value: String(p?.category?.value ?? "").trim(),
-      label: String(p?.category?.reference?.displayName ?? "").trim(),
-    },
-    systemGroup: {
-      value: String(p?.systemGroup?.value ?? "").trim(),
-      label: String(p?.systemGroup?.reference?.displayName ?? "").trim(),
-    },
-    subcategory: {
-      value: String(p?.subcategory?.value ?? "").trim(),
-      label: String(p?.subcategory?.reference?.displayName ?? "").trim(),
-    },
-  };
-
-  // Load all categories for the dropdown.
-  const categories = await paginateMetaobjects({
-    admin,
-    query: LIST_METAOBJECTS_BY_TYPE,
-    variables: { type: "catalog_main_category" },
-    pathToConnection: (d) => d?.metaobjects,
-  });
-  const categoryOptions: Option[] = (categories || [])
-    .map((n: any) => {
-      const id = typeof n?.id === "string" ? n.id.trim() : "";
-      if (!id) return null;
-      const label = String(n?.displayName ?? n?.handle ?? id).trim();
-      return { value: id, label };
-    })
-    .filter(Boolean) as any;
-
-  return json({
-    shop_domain,
-    product: {
-      id: String(p?.id ?? ""),
-      title: String(p?.title ?? ""),
-      handle: String(p?.handle ?? ""),
-    },
-    vehicleIndex: indexSummary(await getVehicleIndex({ admin, shopDomain: shop_domain, refresh: false })),
-    classification,
-    classificationOptions: {
-      categories: categoryOptions,
-    },
-    selectedVehicles: selected.map((n: any) => ({
-      id: String(n?.id ?? ""),
-      handle: String(n?.handle ?? ""),
-      vehicle_key: n?.vehicle_key ?? null,
-      display_name: n?.display_name ?? null,
-    })),
-    // Progressive filters: don't load vehicle datasets at page load.
-  });
+  try {
+    const loaded = await loadFitmentRouteData({
+      admin,
+      shopDomain: shop_domain,
+      productHandle,
+    });
+    if (loaded.notFound) throw new Response("Product not found", { status: 404 });
+    return json(loaded.payload);
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    if (isShopifyThrottled(error)) {
+      return json(
+        emptyFitmentRoutePayload({
+          shopDomain: shop_domain,
+          productHandle,
+          shopifyThrottled: true,
+        }),
+      );
+    }
+    throw error;
+  }
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -347,12 +296,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (intent === "classification_system_groups") {
       const category = String(fd.get("category") || "").trim();
       if (!category) return json({ ok: true, systemGroups: [], classificationLinkage: { scope: "system_groups" as const } });
-      const groups = await paginateMetaobjects({
+      const listed = await listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "catalog_system_group" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain: shop_domain,
+        type: "catalog_system_group",
+        mode: "fields",
       });
+      if (listed.throttled) {
+        return json(
+          {
+            ok: false,
+            error: "Shopify Admin API throttled this request. Please wait a moment and try again.",
+            throttled: true,
+          },
+          { status: 429 },
+        );
+      }
+      const groups = listed.nodes;
       const allRows = (groups || [])
         .map((n: any) => {
           const id = typeof n?.id === "string" ? n.id.trim() : "";
@@ -389,12 +349,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (intent === "classification_subcategories") {
       const systemGroup = String(fd.get("systemGroup") || "").trim();
       if (!systemGroup) return json({ ok: true, subcategories: [], classificationLinkage: { scope: "subcategories" as const } });
-      const subs = await paginateMetaobjects({
+      const listed = await listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "catalog_subcategory" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain: shop_domain,
+        type: "catalog_subcategory",
+        mode: "fields",
       });
+      if (listed.throttled) {
+        return json(
+          {
+            ok: false,
+            error: "Shopify Admin API throttled this request. Please wait a moment and try again.",
+            throttled: true,
+          },
+          { status: 429 },
+        );
+      }
+      const subs = listed.nodes;
       const allRows = (subs || [])
         .map((n: any) => {
           const id = typeof n?.id === "string" ? n.id.trim() : "";
@@ -568,7 +539,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function FitmentEditor() {
-  const { shop_domain, product, selectedVehicles, classification, classificationOptions, vehicleIndex } = useLoaderData<typeof loader>();
+  const {
+    shop_domain,
+    product,
+    selectedVehicles,
+    classification,
+    classificationOptions,
+    vehicleIndex,
+    shopifyThrottled,
+    compatibilityUnavailable,
+  } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1168,6 +1148,15 @@ export default function FitmentEditor() {
       }}
     >
       <BlockStack gap="400">
+        {shopifyThrottled || compatibilityUnavailable ? (
+          <Banner title="Shopify Admin API throttled" tone="warning">
+            <p>
+              A temporary Shopify GraphQL throttle blocked some Admin data. Compatibility was not assumed or
+              invented. Reload this product in a moment. Ocean remains the fitment authority.
+            </p>
+          </Banner>
+        ) : null}
+
         {error ? (
           <Banner title="Error" tone="critical" onDismiss={() => setError(null)}>
             <p>{error}</p>
