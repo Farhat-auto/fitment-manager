@@ -86,20 +86,24 @@ check("cached rows populate Make then Model then vehicles", () => {
   assert.equal(rows[0].gid, "gid://shopify/Metaobject/1");
 });
 
-check("Fitment loader ships makes/indexVehicles from cache and skips index_makes when ready", () => {
+check("Fitment loader and POST read the same durable vehicle index", () => {
   const load = source("app/fitment/fitmentRouteLoad.server.ts");
   assert.match(load, /makes/);
-  assert.match(load, /indexVehicles/);
   assert.match(load, /refresh: false/);
+  assert.match(load, /Do not ship the full durable vehicle catalogue/);
+  const vi = source("app/vehicles/vehicleIndex.server.ts");
+  assert.match(vi, /getDurableVehicleIndexStore/);
+  assert.doesNotMatch(vi, /memCache/);
   const route = source("app/routes/app.fitment.$productHandle.tsx");
-  assert.match(route, /Do not POST index_makes when/);
   assert.match(route, /vehicleIndexIsReady/);
   assert.match(route, /listModelsFromRows/);
   assert.match(route, /vehiclesForMakeModelFromRows/);
+  assert.match(route, /getCatalogIndex/);
   assert.doesNotMatch(
     route,
     /const indexReady = !!indexInfo\?\.count/,
   );
+  assert.doesNotMatch(route, /that 409 is what produced/);
 });
 
 check("empty cache is the only unbuilt state", () => {

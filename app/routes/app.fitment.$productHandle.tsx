@@ -36,11 +36,10 @@ import { SET_FITMENT_VEHICLES } from "../graphql/fitment";
 import { rejectLegacyVehicleWrite } from "../ocean/legacy";
 import { resolveShopDomain } from "../fitment/fitment.server";
 import { emptyFitmentRoutePayload, loadFitmentRouteData } from "../fitment/fitmentRouteLoad.server";
-import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server";
+import { getCatalogIndex } from "../utils/catalogIndex.server";
 import { isShopifyThrottled } from "../utils/shopifyGraphql.server";
 import {
-  catalogSystemGroupIdFromSubcategoryNode,
-  parentCatalogCategoryIdFromSystemGroupNode,
+  resolveCatalogIdentity,
   subcategoriesForSystemGroup,
   systemGroupsForCategory,
 } from "../utils/catalogMetaobjectParents.server";
@@ -90,8 +89,8 @@ type VehicleSearchNode = {
 type Opt = { value: string; label: string };
 type Option = { value: string; label: string };
 
-type ClassificationSystemGroupRow = Opt & { parentCategoryId?: string };
-type ClassificationSubcategoryRow = Opt & { systemGroupId?: string };
+type ClassificationSystemGroupRow = Opt & { parentCategoryId?: string; handle?: string };
+type ClassificationSubcategoryRow = Opt & { systemGroupId?: string; handle?: string };
 
 function safeArray<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
@@ -110,7 +109,8 @@ function normalizeSystemGroupRows(raw: unknown): ClassificationSystemGroupRow[] 
     seen.add(value);
     const label = String((item as any).label ?? value).trim() || value;
     const parentCategoryId = String((item as any).parentCategoryId ?? "").trim();
-    out.push({ value, label, parentCategoryId });
+    const handle = String((item as any).handle ?? "").trim();
+    out.push({ value, label, parentCategoryId, handle });
   }
   return out;
 }
@@ -127,7 +127,8 @@ function normalizeSubcategoryRows(raw: unknown): ClassificationSubcategoryRow[] 
     seen.add(value);
     const label = String((item as any).label ?? value).trim() || value;
     const systemGroupId = String((item as any).systemGroupId ?? "").trim();
-    out.push({ value, label, systemGroupId });
+    const handle = String((item as any).handle ?? "").trim();
+    out.push({ value, label, systemGroupId, handle });
   }
   return out;
 }
@@ -317,17 +318,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // NOTE: Legacy live vehicle querying removed.
     // Fitment filters should rely on the cached Vehicle Index only.
 
-    // Product classification options (catalog_* metaobject types).
+    // Product classification options from durable catalog_index_cache (same shop snapshot).
     if (intent === "classification_system_groups") {
       const category = String(fd.get("category") || "").trim();
-      if (!category) return json({ ok: true, systemGroups: [], classificationLinkage: { scope: "system_groups" as const } });
-      const listed = await listCatalogMetaobjectsCached({
-        admin,
-        shopDomain: shop_domain,
-        type: "catalog_system_group",
-        mode: "system_groups",
-      });
-      if (listed.throttled) {
+      const categoryHandle = String(fd.get("categoryHandle") || "").trim();
+      const categoryLabel = String(fd.get("categoryLabel") || "").trim();
+      if (!category && !categoryHandle && !categoryLabel) {
+        return json({ ok: true, systemGroups: [], classificationLinkage: { scope: "system_groups" as const } });
+      }
+      const listed = await getCatalogIndex({ admin, shopDomain: shop_domain, refresh: false });
+      if (listed.throttled && !listed.cache) {
         return json(
           {
             ok: false,
@@ -337,19 +337,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
           { status: 429 },
         );
       }
-      const groups = listed.nodes;
-      const allRows = (groups || [])
-        .map((n: any) => {
-          const id = typeof n?.id === "string" ? n.id.trim() : "";
-          if (!id) return null;
-          const label = String(n?.displayName ?? n?.handle ?? id).trim();
-          const parentCategoryId = parentCatalogCategoryIdFromSystemGroupNode(n);
-          return { value: id, label, parentCategoryId: String(parentCategoryId || "").trim() };
-        })
-        .filter(Boolean) as Array<{ value: string; label: string; parentCategoryId: string }>;
-
-      const storeHasParentLinks = allRows.some((r) => !!String(r.parentCategoryId || "").trim());
-      const systemGroups = systemGroupsForCategory(allRows, category).sort((a, b) =>
+      const allRows = listed.cache?.systemGroups || [];
+      const identity = resolveCatalogIdentity(listed.cache?.categories || [], {
+        id: category,
+        handle: categoryHandle,
+        label: categoryLabel,
+      });
+      const storeHasParentLinks = allRows.some(
+        (r) => !!(r.parentCategoryId || r.parentCategoryHandle || r.parentCategoryLabel),
+      );
+      const systemGroups = systemGroupsForCategory(allRows, identity).sort((a, b) =>
         a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }),
       );
 
@@ -361,20 +358,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
           storeHasParentLinks,
           totalSystemGroupsInStore: allRows.length,
           systemGroupsShown: systemGroups.length,
+          parentFieldProbe: listed.cache?.parentFieldProbe ?? null,
+          matchedCategory: identity,
         },
       });
     }
 
     if (intent === "classification_subcategories") {
       const systemGroup = String(fd.get("systemGroup") || "").trim();
-      if (!systemGroup) return json({ ok: true, subcategories: [], classificationLinkage: { scope: "subcategories" as const } });
-      const listed = await listCatalogMetaobjectsCached({
-        admin,
-        shopDomain: shop_domain,
-        type: "catalog_subcategory",
-        mode: "subcategories",
-      });
-      if (listed.throttled) {
+      const systemGroupHandle = String(fd.get("systemGroupHandle") || "").trim();
+      const systemGroupLabel = String(fd.get("systemGroupLabel") || "").trim();
+      if (!systemGroup && !systemGroupHandle && !systemGroupLabel) {
+        return json({ ok: true, subcategories: [], classificationLinkage: { scope: "subcategories" as const } });
+      }
+      const listed = await getCatalogIndex({ admin, shopDomain: shop_domain, refresh: false });
+      if (listed.throttled && !listed.cache) {
         return json(
           {
             ok: false,
@@ -384,19 +382,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
           { status: 429 },
         );
       }
-      const subs = listed.nodes;
-      const allRows = (subs || [])
-        .map((n: any) => {
-          const id = typeof n?.id === "string" ? n.id.trim() : "";
-          if (!id) return null;
-          const label = String(n?.displayName ?? n?.handle ?? id).trim();
-          const systemGroupId = catalogSystemGroupIdFromSubcategoryNode(n);
-          return { value: id, label, systemGroupId: String(systemGroupId || "").trim() };
-        })
-        .filter(Boolean) as Array<{ value: string; label: string; systemGroupId: string }>;
-
-      const storeHasSystemGroupLinks = allRows.some((r) => !!String(r.systemGroupId || "").trim());
-      const subcategories = subcategoriesForSystemGroup(allRows, systemGroup).sort((a, b) =>
+      const allRows = listed.cache?.subcategories || [];
+      const groups = listed.cache?.systemGroups || [];
+      const resolved = resolveCatalogIdentity(
+        groups.map((g) => ({ value: g.value, label: g.label, handle: g.handle })),
+        { id: systemGroup, handle: systemGroupHandle, label: systemGroupLabel },
+      );
+      const storeHasSystemGroupLinks = allRows.some((r) => !!(r.systemGroupId || r.systemGroupHandle || r.systemGroupLabel));
+      const subcategories = subcategoriesForSystemGroup(allRows, resolved).sort((a, b) =>
         a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }),
       );
 
@@ -683,9 +676,8 @@ export default function FitmentEditor() {
     makes: makeOptions,
   });
 
-  // Page load: use cached makes from the loader. Do not POST index_makes when
-  // the cached index is already ready — that 409 is what produced "not built"
-  // next to "3792 vehicles cached".
+  // Page load: use makes already resolved from the durable vehicle_index_cache.
+  // POST index_makes still reads that same store; skip only when makes are already present.
   React.useEffect(() => {
     if (indexReady && makeOptions.length) {
       makesCacheRef.current = makeOptions;
@@ -706,21 +698,29 @@ export default function FitmentEditor() {
   // On mount/loader refresh: if classification already selected, load dependent options.
   React.useEffect(() => {
     const cat = String((classification as any)?.category?.value ?? "").trim();
+    const catHandle = String((classification as any)?.category?.handle ?? "").trim();
+    const catLabel = String((classification as any)?.category?.label ?? "").trim();
     const sg = String((classification as any)?.systemGroup?.value ?? "").trim();
+    const sgHandle = String((classification as any)?.systemGroup?.handle ?? "").trim();
+    const sgLabel = String((classification as any)?.systemGroup?.label ?? "").trim();
     const sub = String((classification as any)?.subcategory?.value ?? "").trim();
     setClassCategory(cat);
     setClassSystemGroup(sg);
     setClassSubcategory(sub);
-    if (cat) {
+    if (cat || catHandle || catLabel) {
       const fd = new FormData();
       fd.set("_intent", "classification_system_groups");
       fd.set("category", cat);
+      fd.set("categoryHandle", catHandle);
+      fd.set("categoryLabel", catLabel);
       classificationFetcher.submit(fd, { method: "post" });
     }
-    if (sg) {
+    if (sg || sgHandle || sgLabel) {
       const fd = new FormData();
       fd.set("_intent", "classification_subcategories");
       fd.set("systemGroup", sg);
+      fd.set("systemGroupHandle", sgHandle);
+      fd.set("systemGroupLabel", sgLabel);
       classificationFetcher.submit(fd, { method: "post" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -731,16 +731,6 @@ export default function FitmentEditor() {
     const d: any = facetFetcher.data;
     if (!d) return;
     if (d.ok === false && d.needsRefresh) {
-      if (
-        vehicleIndexIsReady({
-          ready: indexInfo?.ready,
-          count: indexInfo?.count,
-          vehicles: cachedIndexVehicles,
-          makes: makeOptions,
-        })
-      ) {
-        return;
-      }
       setRateLimitMsg("Vehicle index is not built yet. Click Refresh Vehicle Index.");
       return;
     }
@@ -757,7 +747,7 @@ export default function FitmentEditor() {
       if (key) modelsByMakeCacheRef.current.set(key, models);
       setModelOptions(models);
     }
-  }, [facetFetcher.data, cachedIndexVehicles, indexInfo?.count, indexInfo?.ready, makeOptions]);
+  }, [facetFetcher.data]);
 
   React.useEffect(() => {
     const d: any = indexFetcher.data;
@@ -1346,6 +1336,9 @@ export default function FitmentEditor() {
                   value={classCategory}
                   onChange={(v) => {
                     const next = String(v || "").trim();
+                    const selected = safeArray<any>((classificationOptions as any)?.categories).find(
+                      (o) => String(o?.value ?? "") === next,
+                    );
                     setClassCategory(next);
                     setClassSystemGroup("");
                     setClassSubcategory("");
@@ -1356,6 +1349,8 @@ export default function FitmentEditor() {
                       const fd = new FormData();
                       fd.set("_intent", "classification_system_groups");
                       fd.set("category", next);
+                      fd.set("categoryHandle", String(selected?.handle ?? "").trim());
+                      fd.set("categoryLabel", String(selected?.label ?? "").trim());
                       classificationFetcher.submit(fd, { method: "post" });
                     }
                   }}
@@ -1385,6 +1380,7 @@ export default function FitmentEditor() {
                   value={classSystemGroup}
                   onChange={(v) => {
                     const next = String(v || "").trim();
+                    const selected = visibleSystemGroups.find((o) => o.value === next);
                     setClassSystemGroup(next);
                     setClassSubcategory("");
                     setAllSubcategories([]);
@@ -1392,6 +1388,8 @@ export default function FitmentEditor() {
                       const fd = new FormData();
                       fd.set("_intent", "classification_subcategories");
                       fd.set("systemGroup", next);
+                      fd.set("systemGroupHandle", String(selected?.handle ?? "").trim());
+                      fd.set("systemGroupLabel", String(selected?.label ?? "").trim());
                       classificationFetcher.submit(fd, { method: "post" });
                     }
                   }}

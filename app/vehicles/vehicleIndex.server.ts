@@ -1,5 +1,3 @@
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import {
   indexSummaryFromCache,
   listMakesFromRows,
@@ -7,6 +5,10 @@ import {
   vehiclesForMakeModelFromRows,
   type VehicleIndexRow as VehicleIndexRowBase,
 } from "./vehicleIndexQuery.ts";
+import {
+  getDurableVehicleIndexStore,
+  type VehicleIndexCache,
+} from "./vehicleIndexDurable.server.ts";
 
 /** Return value of `authenticate.admin(request).admin` — GraphQL admin client. */
 export type ShopifyAdmin = {
@@ -14,64 +16,12 @@ export type ShopifyAdmin = {
 };
 
 export type VehicleIndexRow = VehicleIndexRowBase;
-
-type VehicleIndexCache = {
-  builtAt: number;
-  count: number;
-  vehicles: VehicleIndexRow[];
-};
-
-const memCache = new Map<string, VehicleIndexCache>();
+export type { VehicleIndexCache };
 
 function norm(v: unknown): string {
   return String(v ?? "")
     .trim()
     .replace(/\s+/g, " ");
-}
-
-function normKey(v: unknown): string {
-  return norm(v).toLowerCase();
-}
-
-function cacheKey(shopDomain: string): string {
-  return normKey(shopDomain || "");
-}
-
-async function ensureCacheDir(): Promise<string> {
-  const dir = path.join(process.cwd(), ".cache");
-  try {
-    await fs.mkdir(dir, { recursive: true });
-  } catch {
-    // ignore
-  }
-  return dir;
-}
-
-async function readDiskCache(shopDomain: string): Promise<VehicleIndexCache | null> {
-  const dir = await ensureCacheDir();
-  const fp = path.join(dir, `vehicle-index.${cacheKey(shopDomain)}.json`);
-  try {
-    const raw = await fs.readFile(fp, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    const builtAt = Number((parsed as any).builtAt ?? 0);
-    const vehicles = Array.isArray((parsed as any).vehicles) ? (parsed as any).vehicles : [];
-    const count = Number((parsed as any).count ?? vehicles.length);
-    if (!builtAt || !Array.isArray(vehicles)) return null;
-    return { builtAt, count, vehicles } as VehicleIndexCache;
-  } catch {
-    return null;
-  }
-}
-
-async function writeDiskCache(shopDomain: string, cache: VehicleIndexCache): Promise<void> {
-  const dir = await ensureCacheDir();
-  const fp = path.join(dir, `vehicle-index.${cacheKey(shopDomain)}.json`);
-  try {
-    await fs.writeFile(fp, JSON.stringify(cache), "utf8");
-  } catch {
-    // ignore
-  }
 }
 
 const LIST_VEHICLES_FOR_INDEX = `#graphql
@@ -150,6 +100,19 @@ async function graphqlWithBackoff(admin: ShopifyAdmin, query: string, variables:
   throw lastErr ?? new Error("Shopify request failed");
 }
 
+async function loadDurable(shopDomain: string): Promise<VehicleIndexCache | null> {
+  try {
+    return await getDurableVehicleIndexStore().load(shopDomain);
+  } catch {
+    // Missing SUPABASE_* or table: fail closed. Never invent a ready index.
+    return null;
+  }
+}
+
+/**
+ * Explicit Refresh Vehicle Index only. Writes public.vehicle_index_cache.
+ * Process memory and .cache disk are not the source of truth.
+ */
 export async function buildVehicleIndex(params: {
   admin: ShopifyAdmin;
   shopDomain: string;
@@ -198,34 +161,27 @@ export async function buildVehicleIndex(params: {
     vehicles,
   };
 
-  memCache.set(cacheKey(params.shopDomain), cache);
-  await writeDiskCache(params.shopDomain, cache);
+  await getDurableVehicleIndexStore().save(params.shopDomain, cache);
   return cache;
 }
 
+/**
+ * Loader GET and POST actions must read the SAME durable vehicle-index state.
+ * Cache miss: do not list the whole Shopify vehicle catalogue on a product GET.
+ * Make/Model/Engine options come from public.vehicle_index_cache only after an explicit refresh.
+ */
 export async function getVehicleIndex(params: {
   admin: ShopifyAdmin;
   shopDomain: string;
   refresh?: boolean;
 }): Promise<VehicleIndexCache | null> {
-  const key = cacheKey(params.shopDomain);
   if (!params.refresh) {
-    const mem = memCache.get(key);
-    if (mem?.vehicles?.length) return mem;
-    const disk = await readDiskCache(params.shopDomain);
-    if (disk?.vehicles?.length) {
-      memCache.set(key, disk);
-      return disk;
-    }
-    // Cache miss: do not list the whole Shopify vehicle catalogue on a product GET.
-    // Make/Model/Engine options come from this cache only after an explicit refresh.
-    return null;
+    return loadDurable(params.shopDomain);
   }
   try {
     return await buildVehicleIndex({ admin: params.admin, shopDomain: params.shopDomain });
   } catch {
-    const mem = memCache.get(key);
-    return mem?.vehicles?.length ? mem : null;
+    return loadDurable(params.shopDomain);
   }
 }
 
@@ -255,10 +211,10 @@ export function facetEngines(rows: VehicleIndexRow[]): string[] {
 }
 
 export function facetVariants(rows: VehicleIndexRow[], engines: string[]): string[] {
-  const enginesK = new Set((engines || []).map(normKey).filter(Boolean));
+  const enginesK = new Set((engines || []).map((x) => norm(x).toLowerCase()).filter(Boolean));
   const seen = new Set<string>();
   for (const v of rows) {
-    if (enginesK.size && !enginesK.has(normKey(v.engineName))) continue;
+    if (enginesK.size && !enginesK.has(norm(v.engineName).toLowerCase())) continue;
     const vv = norm(v.variant);
     if (vv) seen.add(vv);
   }
@@ -266,13 +222,13 @@ export function facetVariants(rows: VehicleIndexRow[], engines: string[]): strin
 }
 
 export function facetYears(rows: VehicleIndexRow[], engines: string[], variants: string[]) {
-  const enginesK = new Set((engines || []).map(normKey).filter(Boolean));
-  const variantsK = new Set((variants || []).map(normKey).filter(Boolean));
+  const enginesK = new Set((engines || []).map((x) => norm(x).toLowerCase()).filter(Boolean));
+  const variantsK = new Set((variants || []).map((x) => norm(x).toLowerCase()).filter(Boolean));
   const from = new Set<string>();
   const to = new Set<string>();
   for (const v of rows) {
-    if (enginesK.size && !enginesK.has(normKey(v.engineName))) continue;
-    if (variantsK.size && !variantsK.has(normKey(v.variant))) continue;
+    if (enginesK.size && !enginesK.has(norm(v.engineName).toLowerCase())) continue;
+    if (variantsK.size && !variantsK.has(norm(v.variant).toLowerCase())) continue;
     const yf = norm(v.yearFrom);
     const yt = norm(v.yearTo);
     if (yf) from.add(yf);
@@ -291,17 +247,16 @@ export function filterRows(params: {
   yearFrom: string;
   yearTo: string;
 }) {
-  const enginesK = new Set((params.engines || []).map(normKey).filter(Boolean));
-  const variantsK = new Set((params.variants || []).map(normKey).filter(Boolean));
+  const enginesK = new Set((params.engines || []).map((x) => norm(x).toLowerCase()).filter(Boolean));
+  const variantsK = new Set((params.variants || []).map((x) => norm(x).toLowerCase()).filter(Boolean));
   const yFrom = norm(params.yearFrom);
   const yTo = norm(params.yearTo);
 
   return params.rows.filter((v) => {
-    if (enginesK.size && !enginesK.has(normKey(v.engineName))) return false;
-    if (variantsK.size && !variantsK.has(normKey(v.variant))) return false;
+    if (enginesK.size && !enginesK.has(norm(v.engineName).toLowerCase())) return false;
+    if (variantsK.size && !variantsK.has(norm(v.variant).toLowerCase())) return false;
     if (yFrom && norm(v.yearFrom) !== yFrom) return false;
     if (yTo && norm(v.yearTo) !== yTo) return false;
     return true;
   });
 }
-

@@ -136,15 +136,40 @@ export const LIST_CATALOG_METAOBJECTS = `#graphql
         type
         handle
         displayName
+        parent_category: field(key: "parent_category") {
+          type
+          value
+          reference {
+            ... on Metaobject { id type handle displayName }
+          }
+          references(first: 1) {
+            nodes { ... on Metaobject { id type handle displayName } }
+          }
+        }
+        parent_group: field(key: "parent_group") {
+          type
+          value
+          reference {
+            ... on Metaobject { id type handle displayName }
+          }
+          references(first: 1) {
+            nodes { ... on Metaobject { id type handle displayName } }
+          }
+        }
         fields {
           key
+          type
           value
           reference {
             ... on Metaobject {
               id
               type
+              handle
               displayName
             }
+          }
+          references(first: 1) {
+            nodes { ... on Metaobject { id type handle displayName } }
           }
         }
       }
@@ -165,16 +190,22 @@ export const LIST_CATALOG_SYSTEM_GROUPS = `#graphql
         handle
         displayName
         parent_category: field(key: "parent_category") {
+          type
           value
-          reference { ... on Metaobject { id type handle } }
+          reference { ... on Metaobject { id type handle displayName } }
+          references(first: 1) {
+            nodes { ... on Metaobject { id type handle displayName } }
+          }
         }
         catalog_main_category: field(key: "catalog_main_category") {
+          type
           value
-          reference { ... on Metaobject { id type handle } }
+          reference { ... on Metaobject { id type handle displayName } }
         }
         main_category: field(key: "main_category") {
+          type
           value
-          reference { ... on Metaobject { id type handle } }
+          reference { ... on Metaobject { id type handle displayName } }
         }
       }
     }
@@ -193,8 +224,12 @@ export const LIST_CATALOG_SUBCATEGORIES = `#graphql
         handle
         displayName
         parent_group: field(key: "parent_group") {
+          type
           value
-          reference { ... on Metaobject { id type handle } }
+          reference { ... on Metaobject { id type handle displayName } }
+          references(first: 1) {
+            nodes { ... on Metaobject { id type handle displayName } }
+          }
         }
         group: field(key: "group") {
           value
@@ -375,15 +410,15 @@ export const GET_PRODUCT_FOR_FITMENT_PAGE = `#graphql
       article_number: metafield(namespace: "custom", key: "article_number") { value }
       category: metafield(namespace: "custom", key: "catalog_main_category") {
         value
-        reference { ... on Metaobject { id displayName } }
+        reference { ... on Metaobject { id handle displayName } }
       }
       systemGroup: metafield(namespace: "custom", key: "catalog_system_group") {
         value
-        reference { ... on Metaobject { id displayName } }
+        reference { ... on Metaobject { id handle displayName } }
       }
       subcategory: metafield(namespace: "custom", key: "catalog_subcategory") {
         value
-        reference { ... on Metaobject { id displayName } }
+        reference { ... on Metaobject { id handle displayName } }
       }
       fitmentVehicles: metafield(namespace: "fitment", key: "vehicles") {
         id

@@ -41,8 +41,6 @@ export function vehicleIndexIsReady(index: {
   makes?: unknown[];
 } | null | undefined): boolean {
   if (!index) return false;
-  if (index.ready === true) return true;
-  if (index.ready === false) return false;
   if (Array.isArray(index.vehicles) && index.vehicles.length > 0) return true;
   if (Array.isArray(index.makes) && index.makes.length > 0) return true;
   return false;

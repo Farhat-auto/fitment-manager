@@ -8,6 +8,7 @@
  */
 
 import { GET_PRODUCT_FOR_FITMENT_PAGE } from "../graphql/fitment.ts";
+import { readCatalogIndex } from "../utils/catalogIndex.server.ts";
 import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server.ts";
 import { adminGraphqlJson, isShopifyThrottled, type ShopifyGraphqlClient } from "../utils/shopifyGraphql.server.ts";
 import { getVehicleIndex, indexSummary, listMakes } from "../vehicles/vehicleIndex.server.ts";
@@ -30,12 +31,12 @@ export type FitmentRoutePayload = {
   makes: string[];
   indexVehicles: VehicleIndexRow[];
   classification: {
-    category: { value: string; label: string };
-    systemGroup: { value: string; label: string };
-    subcategory: { value: string; label: string };
+    category: { value: string; label: string; handle: string };
+    systemGroup: { value: string; label: string; handle: string };
+    subcategory: { value: string; label: string; handle: string };
   };
   classificationOptions: {
-    categories: Array<{ value: string; label: string }>;
+    categories: Array<{ value: string; label: string; handle?: string }>;
   };
   selectedVehicles: Array<{
     id: string;
@@ -50,9 +51,9 @@ export type FitmentRoutePayload = {
 
 function emptyClassification() {
   return {
-    category: { value: "", label: "" },
-    systemGroup: { value: "", label: "" },
-    subcategory: { value: "", label: "" },
+    category: { value: "", label: "", handle: "" },
+    systemGroup: { value: "", label: "", handle: "" },
+    subcategory: { value: "", label: "", handle: "" },
   };
 }
 
@@ -172,15 +173,18 @@ export async function loadFitmentRouteData(params: {
   const selectedVehicles = mapSelectedVehicles(p?.fitmentVehicles?.references?.nodes);
   const classification = {
     category: {
-      value: fieldText(p?.category?.value),
+      value: fieldText(p?.category?.value) || fieldText(p?.category?.reference?.id),
+      handle: fieldText(p?.category?.reference?.handle),
       label: fieldText(p?.category?.reference?.displayName),
     },
     systemGroup: {
-      value: fieldText(p?.systemGroup?.value),
+      value: fieldText(p?.systemGroup?.value) || fieldText(p?.systemGroup?.reference?.id),
+      handle: fieldText(p?.systemGroup?.reference?.handle),
       label: fieldText(p?.systemGroup?.reference?.displayName),
     },
     subcategory: {
-      value: fieldText(p?.subcategory?.value),
+      value: fieldText(p?.subcategory?.value) || fieldText(p?.subcategory?.reference?.id),
+      handle: fieldText(p?.subcategory?.reference?.handle),
       label: fieldText(p?.subcategory?.reference?.displayName),
     },
   };
@@ -192,34 +196,46 @@ export async function loadFitmentRouteData(params: {
   });
   const vehicleIndex = indexSummary(idx);
   const makes = idx?.vehicles?.length ? listMakes(idx) : [];
-  const indexVehicles = idx?.vehicles?.length ? idx.vehicles : [];
+  // Do not ship the full durable vehicle catalogue in the HTML payload.
+  // POST index_makes / index_models / index_make_model read the same durable store.
+  const indexVehicles: VehicleIndexRow[] = [];
 
-  let categoryOptions: Array<{ value: string; label: string }> = [];
+  let categoryOptions: Array<{ value: string; label: string; handle?: string }> = [];
   let catalogOptionsIncomplete = false;
-  try {
-    const catalog = await listCatalogMetaobjectsCached({
-      admin: params.admin,
-      shopDomain,
-      type: "catalog_main_category",
-      mode: "labels",
-      sleepFn: params.sleepFn,
-      maxRetries: params.maxRetries,
-    });
-    if (catalog.throttled) shopifyThrottled = true;
-    if (catalog.incomplete || catalog.throttled) catalogOptionsIncomplete = true;
-    categoryOptions = (catalog.nodes || [])
-      .map((n) => {
-        const id = fieldText(n?.id);
-        if (!id) return null;
-        const label = fieldText(n?.displayName ?? n?.handle ?? id) || id;
-        return { value: id, label };
-      })
-      .filter(Boolean) as Array<{ value: string; label: string }>;
-  } catch (error) {
-    if (!isShopifyThrottled(error)) throw error;
-    shopifyThrottled = true;
-    catalogOptionsIncomplete = true;
-    categoryOptions = [];
+  const durableCatalog = await readCatalogIndex(shopDomain);
+  if (durableCatalog?.categories?.length) {
+    categoryOptions = durableCatalog.categories.map((c) => ({
+      value: fieldText(c.value),
+      label: fieldText(c.label) || fieldText(c.value),
+      handle: fieldText(c.handle),
+    }));
+  } else {
+    try {
+      const catalog = await listCatalogMetaobjectsCached({
+        admin: params.admin,
+        shopDomain,
+        type: "catalog_main_category",
+        mode: "labels",
+        sleepFn: params.sleepFn,
+        maxRetries: params.maxRetries,
+      });
+      if (catalog.throttled) shopifyThrottled = true;
+      if (catalog.incomplete || catalog.throttled) catalogOptionsIncomplete = true;
+      categoryOptions = (catalog.nodes || [])
+        .map((n) => {
+          const id = fieldText(n?.id);
+          if (!id) return null;
+          const handle = fieldText(n?.handle);
+          const label = fieldText(n?.displayName ?? n?.handle ?? id) || id;
+          return { value: id, label, handle };
+        })
+        .filter(Boolean) as Array<{ value: string; label: string; handle?: string }>;
+    } catch (error) {
+      if (!isShopifyThrottled(error)) throw error;
+      shopifyThrottled = true;
+      catalogOptionsIncomplete = true;
+      categoryOptions = [];
+    }
   }
 
   return {

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  catalogParentRefFromField,
   catalogSystemGroupIdFromSubcategoryNode,
   metaobjectIdMatch,
   parentCatalogCategoryIdFromSystemGroupNode,
+  parentCatalogCategoryRefFromSystemGroupNode,
+  resolveCatalogIdentity,
   subcategoriesForSystemGroup,
   systemGroupsForCategory,
 } from "../app/utils/catalogMetaobjectParents.server.ts";
@@ -103,6 +106,86 @@ check("missing parent links fail closed — no invented system groups", () => {
     { value: "gid://shopify/Metaobject/other", label: "Other", parentCategoryId: "" },
   ];
   assert.deepEqual(systemGroupsForCategory(rows, COOLING), []);
+});
+
+check("Admin GraphQL reference.id is the theme parent_category contract", () => {
+  const node = {
+    id: WATER_PUMPS,
+    parent_category: {
+      type: "metaobject_reference",
+      value: COOLING,
+      reference: { id: COOLING, type: "catalog_main_category", handle: "cooling-system", displayName: "Cooling System" },
+    },
+  };
+  const ref = parentCatalogCategoryRefFromSystemGroupNode(node);
+  assert.equal(ref?.representation, "reference.id");
+  assert.equal(ref?.id, COOLING);
+  assert.equal(ref?.handle, "cooling-system");
+  assert.equal(ref?.label, "Cooling System");
+});
+
+check("value.gid is used when reference is null", () => {
+  const node = {
+    id: WATER_PUMPS,
+    parent_category: { value: COOLING, reference: null },
+  };
+  const ref = parentCatalogCategoryRefFromSystemGroupNode(node);
+  assert.equal(ref?.representation, "value.gid");
+  assert.equal(ref?.id, COOLING);
+});
+
+check("JSON-encoded GID array is parsed", () => {
+  const ref = catalogParentRefFromField(
+    { value: JSON.stringify([COOLING]), reference: null },
+    "parent_category",
+  );
+  assert.equal(ref?.representation, "value.json_gid_array");
+  assert.equal(ref?.id, COOLING);
+});
+
+check("handle-or-label parent matches Cooling System via catalog identity", () => {
+  const node = {
+    id: WATER_PUMPS,
+    parent_category: { value: "cooling-system", reference: null },
+  };
+  const ref = parentCatalogCategoryRefFromSystemGroupNode(node);
+  assert.equal(ref?.representation, "value.handle_or_label");
+  assert.equal(ref?.handle, "cooling-system");
+  const categories = [{ value: COOLING, handle: "cooling-system", label: "Cooling System" }];
+  const ident = resolveCatalogIdentity(categories, { id: COOLING });
+  assert.equal(ident.handle, "cooling-system");
+  assert.equal(ident.label, "Cooling System");
+  const rows = [
+    {
+      value: WATER_PUMPS,
+      label: "Water Pumps",
+      parentCategoryHandle: ref?.handle,
+      parentCategoryLabel: "Cooling System",
+    },
+  ];
+  assert.equal(systemGroupsForCategory(rows, ident).length, 1);
+  assert.equal(systemGroupsForCategory(rows, { id: COOLING, label: "Cooling System" }).length, 1);
+});
+
+check("list.metaobject_reference uses references.nodes.id", () => {
+  const ref = catalogParentRefFromField(
+    {
+      value: JSON.stringify([COOLING]),
+      reference: null,
+      references: { nodes: [{ id: COOLING, type: "catalog_main_category", handle: "cooling-system" }] },
+    },
+    "parent_category",
+  );
+  assert.equal(ref?.representation, "references.nodes.id");
+  assert.equal(ref?.id, COOLING);
+});
+
+check("Liquid-style parent.system.id JSON is parsed", () => {
+  const ref = catalogParentRefFromField(
+    { value: JSON.stringify({ system: { id: COOLING } }), reference: null },
+    "parent_category",
+  );
+  assert.equal(ref?.id, COOLING);
 });
 
 if (failed) {
