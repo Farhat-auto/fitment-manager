@@ -152,14 +152,16 @@ export function listingBelongsTo(
   return true;
 }
 
-export const MAPPING_REQUIRED_LABEL = "Catalogue mapping required";
+export const MAPPING_REQUIRED_LABEL = "No article mapped";
 export const MAPPING_REQUIRED_DETAIL =
-  "This Shopify product is not yet mapped to an Ocean catalogue article. Vehicle compatibility has not been confirmed.";
-export const MAPPING_MAPPED_LABEL = "Catalogue article mapped";
-export const MAP_CATALOGUE_ARTICLE = "Map catalogue article";
-export const MAP_THIS_ARTICLE = "Map this article";
-export const CREATE_OCEAN_ARTICLE = "Create new Ocean article";
-export const DISCOVERY_EVIDENCE_LABEL = "DISCOVERY EVIDENCE";
+  "Match or create a catalogue article before assigning vehicles.";
+export const MAPPING_MAPPED_LABEL = "Article mapped";
+export const MAP_CATALOGUE_ARTICLE = "Find catalogue article";
+export const MAP_THIS_ARTICLE = "Use this article";
+export const CREATE_OCEAN_ARTICLE = "Create catalogue article";
+export const DISCOVERY_EVIDENCE_LABEL = "OE reference overlap";
+export const SUGGESTED_MATCHES = "Suggested matches";
+export const NO_MATCHING_ARTICLE = "No matching catalogue article found";
 
 export function isOperationalOceanError(error: unknown) {
   const code = text(error);

@@ -59,7 +59,7 @@ check("1. Products Manage Fitment opens /app/products/:productId", () => {
   assert.doesNotMatch(products, /\/app\/fitment\/\$\{encodeURIComponent\(p\.handle\)\}/);
   assert.match(productPage, /CarFitmentPanel/);
   assert.match(productPage, /PRODUCT_IDENTITY_QUERY_FAILED/);
-  assert.match(picker, /No fitment assigned/);
+  assert.match(picker, /Vehicle Compatibility/);
   assert.match(picker, /idToken/);
   assert.match(productPage, /oceanProductFitmentGet/);
   assert.match(productsLayout, /<Outlet \/>/);
@@ -85,7 +85,7 @@ check("4. generation can be skipped", () => {
 });
 
 check("5. motorisations load progressively", () => {
-  assert.match(picker, /label="Motorization"/);
+  assert.match(picker, /Motorization — filtered list/);
   assert.match(picker, /\/engines\?" \+ qs\(\{ make_id: makeId, model_id: value \}\)/);
   assert.match(picker, /generation_id: value/);
   assert.match(picker, /if \(!skip\) return;/);
@@ -408,19 +408,18 @@ check("25. canonical page has no vehicle-index chrome and does not hardcode BMW"
 });
 
 check("26. catalogue mapping required is fail-closed and not raw unmapped", () => {
-  assert.match(picker, /MAPPING_REQUIRED_LABEL/);
-  assert.match(picker, /MAPPING_REQUIRED_DETAIL/);
+  assert.match(mappingUi, /MAPPING_REQUIRED_LABEL/);
+  assert.match(mappingUi, /MAPPING_REQUIRED_DETAIL/);
   assert.match(picker, /catalogueMappingRequired/);
   assert.match(picker, /mappingRequired/);
-  assert.match(picker, /Make and model never select motorisations automatically/);
-  assert.match(picker, /Search Ocean catalogue/);
+  assert.match(picker, /Choosing a make or model only filters/);
+  assert.match(picker, /Search make, model, engine, chassis/);
   assert.match(picker, /filtered list, none selected until checked/);
   assert.match(picker, /setChecked\(\{\}\)/);
   assert.match(client, /OCEAN_UPSTREAM/);
   const identitySrc = source("app/ocean/identity.ts");
-  assert.match(identitySrc, /Catalogue mapping required/);
-  assert.match(identitySrc, /not yet mapped to an Ocean catalogue article/);
-  assert.match(identitySrc, /Vehicle compatibility has not been confirmed/);
+  assert.match(identitySrc, /No article mapped/);
+  assert.match(identitySrc, /Match or create a catalogue article before assigning vehicles/);
   assert.doesNotMatch(picker, /article\.numericId \|\| "unmapped"/);
   const listing = emptyListing({ sku: "HI-BRIT-HB-00294", shopify_product_id: "10639645671767" });
   assert.equal(catalogueMappingRequired(listing), true);
@@ -444,21 +443,22 @@ check("27. structured MPN/OE are displayed, title is never parsed into MPN", () 
   assert.doesNotMatch(picker, /2742000207/);
 });
 
-check("28. unmapped product cannot save fitment and vehicle controls stay disabled", () => {
+check("28. unmapped product cannot save fitment and vehicle section waits for article", () => {
   const listing = emptyListing({ sku: "HI-BRIT-HB-00294", shopify_product_id: "10639645671767" });
   assert.equal(catalogueMappingRequired(listing), true);
   assert.equal(vehicleFitmentEnabled(listing), false);
-  assert.match(picker, /disabled=\{\!fitmentEnabled\}/);
-  assert.match(picker, /if \(!fitmentEnabled\) return;/);
+  assert.match(picker, /\{fitmentEnabled \? \(/);
   assert.match(picker, /if \(!addIds.length \|\| mappingRequired\) return;/);
   assert.match(picker, /if \(mappingRequired\) return;/);
-  assert.match(mappingUi, /MAP_CATALOGUE_ARTICLE/);
-  assert.match(source("app/ocean/identity.ts"), /Map catalogue article/);
+  assert.match(mappingUi, /searchCandidates/);
+  assert.match(mappingUi, /SUGGESTED_MATCHES/);
+  assert.match(source("app/ocean/identity.ts"), /Use this article/);
+  assert.match(source("app/ocean/identity.ts"), /Create catalogue article/);
 });
 
 check("29. mapping candidates are evidence only and OE cannot auto-map", () => {
-  assert.match(mappingUi, /DISCOVERY_EVIDENCE_LABEL/);
-  assert.match(mappingUi, /No candidate is mapped until you confirm/);
+  assert.match(source("app/ocean/identity.ts"), /OE reference overlap/);
+  assert.match(mappingUi, /discovery only — not proof this is the same article/);
   assert.match(mappingUi, /MAP_THIS_ARTICLE/);
   assert.match(mappingUi, /confirm: true/);
   assert.match(api, /"article-candidates"/);
@@ -499,7 +499,7 @@ check("30. title cannot supply MPN on create preview", () => {
     }),
     "",
   );
-  assert.match(mappingUi, /Title is never used to fill this field/);
+  assert.match(mappingUi, /The title is not used/);
   assert.match(mappingUi, /disabled/);
 });
 
@@ -509,16 +509,17 @@ check("31. explicit article mapping enables vehicle controls", () => {
     true,
   );
   assert.match(mappingUi, /MAPPING_MAPPED_LABEL/);
-  assert.match(mappingUi, /Mapped to Ocean Article/);
   assert.match(mappingUi, /CREATE_OCEAN_ARTICLE/);
-  assert.match(mappingUi, /Confirm create and map/);
+  assert.match(mappingUi, /Confirm create/);
   assert.match(picker, /classification=\{classification\}/);
   assert.match(productPage, /classification=\{classification\}/);
+  assert.match(picker, /Save Fitment/);
+  assert.match(picker, /You are assigning this product to/);
 });
 
 check("32. make\/model filtering causes zero selections and refresh clears checks", () => {
   assert.match(picker, /setChecked\(\{\}\)/);
-  assert.match(picker, /Changing Make or Model only refreshes the motorisation list/);
+  assert.match(picker, /Choosing a make or model only filters the list/);
   assert.match(picker, /none selected until checked/);
   assert.match(picker, /resetProductScreen/);
   assert.match(picker, /setChecked\(\{\}\)/);

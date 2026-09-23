@@ -6,14 +6,15 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapsible,
   InlineStack,
+  Modal,
   Select,
   Text,
   TextField,
+  Thumbnail,
 } from "@shopify/polaris";
 import {
-  MAPPING_REQUIRED_DETAIL,
-  MAPPING_REQUIRED_LABEL,
   UNVERIFIED,
   canonicalOceanVehicleId,
   catalogueMappingRequired,
@@ -38,6 +39,9 @@ type VehicleRow = {
   engine?: string;
   engine_code?: string;
   year_range?: string;
+  power_kw?: string | number;
+  power_hp?: string | number;
+  body_type?: string;
   checkbox_label?: string;
   customer_label?: string;
   source?: string;
@@ -90,8 +94,15 @@ type Article = {
   mpn: string;
   articleNumber?: string;
   oeReferences?: string[];
+  imageUrl?: string;
   variantId: string;
   variantNumericId: string;
+};
+
+type Classification = {
+  category?: { value?: string; label?: string };
+  systemGroup?: { value?: string; label?: string };
+  subcategory?: { value?: string; label?: string };
 };
 
 function qs(params: Record<string, string | undefined>) {
@@ -109,15 +120,23 @@ function withVehicles<T extends { has_vehicles?: boolean; type_count?: number }>
   });
 }
 
-function vehicleLabel(row: VehicleRow, fallback = "") {
-  return (
-    row.checkbox_label ||
-    row.customer_label ||
-    row.detail ||
-    row.title ||
-    `${row.make_name || ""} ${row.model_name || ""} ${row.engine || ""}`.trim() ||
-    fallback
-  );
+function powerLabel(row: VehicleRow) {
+  if (row.power_kw) return `${row.power_kw} kW`;
+  if (row.power_hp) return `${row.power_hp} hp`;
+  return "";
+}
+
+function motorisationLine(row: VehicleRow) {
+  return [
+    row.detail || row.customer_label || row.engine || row.title,
+    row.engine_code,
+    powerLabel(row),
+    row.year_range,
+    row.generation_name,
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" · ");
 }
 
 async function shopifySessionHeaders(): Promise<Record<string, string>> {
@@ -154,12 +173,6 @@ async function oceanPost(body: Record<string, unknown>) {
   return res.json();
 }
 
-type Classification = {
-  category?: { value?: string; label?: string };
-  systemGroup?: { value?: string; label?: string };
-  subcategory?: { value?: string; label?: string };
-};
-
 export function CarFitmentPanel({
   article,
   initialListing,
@@ -170,7 +183,6 @@ export function CarFitmentPanel({
   classification?: Classification;
 }) {
   const [listing, setListing] = React.useState<Listing>(initialListing || { fitments: [], count: 0 });
-  const [view, setView] = React.useState<"list" | "add" | "bulk" | "import" | "edit">("list");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [status, setStatus] = React.useState("");
@@ -183,16 +195,16 @@ export function CarFitmentPanel({
   const [makeId, setMakeId] = React.useState("");
   const [modelId, setModelId] = React.useState("");
   const [generationId, setGenerationId] = React.useState("");
-  const [engineId, setEngineId] = React.useState("");
   const [skipGeneration, setSkipGeneration] = React.useState(true);
   const [checked, setChecked] = React.useState<Record<string, boolean>>({});
   const [editing, setEditing] = React.useState<VehicleRow | null>(null);
   const [source, setSource] = React.useState("manual");
   const [verification, setVerification] = React.useState(UNVERIFIED);
-  const [position, setPosition] = React.useState("");
-  const [side, setSide] = React.useState("");
-  const [note, setNote] = React.useState("");
   const [importText, setImportText] = React.useState("");
+  const [confirmSave, setConfirmSave] = React.useState(false);
+  const [confirmBulk, setConfirmBulk] = React.useState(false);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [showDiagnostics, setShowDiagnostics] = React.useState(false);
 
   const identity = React.useMemo(
     () => ({
@@ -225,18 +237,15 @@ export function CarFitmentPanel({
     setImportText("");
     setSource("manual");
     setVerification(UNVERIFIED);
-    setPosition("");
-    setSide("");
-    setNote("");
     setMakeId("");
     setModelId("");
     setGenerationId("");
-    setEngineId("");
     setModels([]);
     setGenerations([]);
     setEngines([]);
     setSkipGeneration(true);
-    setView("list");
+    setConfirmSave(false);
+    setConfirmBulk(false);
   }, [article.numericId, initialListing]);
 
   React.useEffect(() => {
@@ -261,7 +270,7 @@ export function CarFitmentPanel({
           setError("");
           return payload;
         }
-        setError(payload?.error || "Could not update car fitment.");
+        setError(payload?.error || "Could not update fitment.");
         return payload;
       }
       if (!listingBelongsTo(payload, identity)) {
@@ -269,7 +278,7 @@ export function CarFitmentPanel({
         return payload;
       }
       setListing(payload);
-      setStatus("Vehicle compatibility updated.");
+      setStatus("Vehicle compatibility saved.");
       return payload;
     },
     [identity],
@@ -290,7 +299,6 @@ export function CarFitmentPanel({
     setMakeId(value);
     setModelId("");
     setGenerationId("");
-    setEngineId("");
     setModels([]);
     setGenerations([]);
     setEngines([]);
@@ -304,7 +312,6 @@ export function CarFitmentPanel({
   const onModel = async (value: string) => {
     setModelId(value);
     setGenerationId("");
-    setEngineId("");
     setGenerations([]);
     setEngines([]);
     setChecked({});
@@ -320,7 +327,6 @@ export function CarFitmentPanel({
 
   const onGeneration = async (value: string) => {
     setGenerationId(value);
-    setEngineId("");
     setChecked({});
     if (!value || !makeId || !modelId) return;
     const payload = await oceanGet(
@@ -342,37 +348,37 @@ export function CarFitmentPanel({
   const selectedEngines = React.useMemo(() => {
     const fromHits = hits.filter((row) => checked[oceanVehicleId(row)]);
     const fromEngines = engines.filter((row) => checked[oceanVehicleId(row)]);
-    const fromSelect = engineId ? engines.filter((row) => oceanVehicleId(row) === engineId) : [];
     const merged = new Map<string, VehicleRow>();
-    for (const row of [...fromHits, ...fromEngines, ...fromSelect]) {
+    for (const row of [...fromHits, ...fromEngines]) {
       const key = oceanVehicleId(row);
       if (key) merged.set(key, row);
     }
     return Array.from(merged.values());
-  }, [engines, checked, engineId, hits]);
+  }, [engines, checked, hits]);
 
   const addIds = selectedEngines.map((row) => oceanVehicleId(row)).filter(Boolean);
   const mappingRequired = catalogueMappingRequired(listing);
   const fitmentEnabled = vehicleFitmentEnabled(listing);
   const operationalError = isOperationalOceanError(error) ? error : "";
   const oeReferences = (article.oeReferences || []).filter(Boolean);
+  const fitments = listing.fitments || [];
+  const count = listing.count || fitments.length;
+  const classificationPath = [classification?.category?.label, classification?.systemGroup?.label, classification?.subcategory?.label]
+    .filter(Boolean)
+    .join(" → ");
 
-  const addSelected = async () => {
+  const saveFitment = async () => {
     if (!addIds.length || mappingRequired) return;
     const payload = await mutate({
       action: "add",
       vehicle_ids: addIds,
       ocean_vehicle_ids: addIds,
       source,
-      verification_status: verification,
-      position,
-      side,
-      fitment_note: note,
+      verification_status: UNVERIFIED,
     });
     if (payload && payload.ok !== false) {
-      setView("list");
       setChecked({});
-      setEngineId("");
+      setConfirmSave(false);
     }
   };
 
@@ -382,45 +388,58 @@ export function CarFitmentPanel({
       action: "import",
       content: importText,
       source: source || "catalogue_import",
-      verification_status: verification,
+      verification_status: UNVERIFIED,
     });
     if (payload && payload.ok !== false) {
-      setView("list");
       setImportText("");
     }
   };
 
-  const saveEdit = async () => {
-    if (!editing) return;
-    const payload = await mutate({
-      action: "update",
-      fitment_id: editing.id,
-      source,
-      verification_status: verification,
-      position,
-      side,
-      fitment_note: note,
-    });
-    if (payload && payload.ok !== false) {
-      setEditing(null);
-      setView("list");
+  const selectAllFiltered = () => {
+    const next: Record<string, boolean> = {};
+    for (const row of engines) {
+      const key = oceanVehicleId(row);
+      if (key) next[key] = true;
     }
+    setChecked(next);
+    setConfirmBulk(false);
   };
-
-  const openPicker = (next: "add" | "bulk") => {
-    if (!fitmentEnabled) return;
-    setChecked({});
-    setEngineId("");
-    setView(next);
-  };
-
-  const fitments = listing.fitments || [];
-  const count = listing.count || fitments.length;
-  const sources = listing.sources || [{ id: "manual", label: "Manual" }];
-  const statuses = listing.verification_statuses || ["VERIFIED", "UNVERIFIED", "NEEDS_REVIEW"];
 
   return (
     <BlockStack gap="400">
+      <Card>
+        <InlineStack gap="300" blockAlign="center">
+          <Thumbnail
+            source={article.imageUrl || "https://cdn.shopify.com/static/images/placeholders/product-1.png"}
+            alt={article.title || article.sku || article.numericId}
+            size="medium"
+          />
+          <BlockStack gap="100">
+            <Text as="h2" variant="headingMd">
+              {article.title || article.sku || "Product"}
+            </Text>
+            <Text as="p" variant="bodySm">
+              {article.vendor || "—"} · SKU {article.sku || "—"} · Article {article.articleNumber || "—"} · MPN{" "}
+              {article.mpn || "—"}
+            </Text>
+            <Text as="p" variant="bodySm" tone="subdued">
+              OE {oeReferences.length ? oeReferences.join(", ") : "—"}
+            </Text>
+            {classificationPath ? (
+              <Text as="p" variant="bodySm" tone="subdued">
+                {classificationPath}
+              </Text>
+            ) : null}
+            <InlineStack gap="200">
+              <Badge tone={mappingRequired ? "warning" : "success"}>
+                {mappingRequired ? "No article mapped" : "Article mapped"}
+              </Badge>
+              <Badge tone={count ? "success" : "warning"}>{`Fitment: ${count} vehicles`}</Badge>
+            </InlineStack>
+          </BlockStack>
+        </InlineStack>
+      </Card>
+
       <CatalogueMappingCard
         article={article}
         listing={listing}
@@ -428,48 +447,9 @@ export function CarFitmentPanel({
         identity={identity}
         onMapped={(payload) => {
           setListing(payload as Listing);
-          setStatus("Catalogue article mapped. Vehicle fitment can now be assigned.");
-          setView("list");
+          setStatus("Article mapped. Select vehicles below.");
         }}
       />
-
-      <Card>
-        <BlockStack gap="200">
-          <InlineStack align="space-between" blockAlign="center">
-            <Text as="h2" variant="headingMd">
-              Vehicle Fitment
-            </Text>
-            <Badge tone={count ? "success" : "warning"}>
-              {listing.fitment_label || `Fitment: ${count} vehicles`}
-            </Badge>
-          </InlineStack>
-          <Text as="p" variant="bodyMd">
-            Identity: Shopify product {article.numericId || "—"}
-            {article.variantNumericId ? ` · variant ${article.variantNumericId}` : ""}
-            {article.sku ? ` · SKU ${article.sku}` : ""}
-            {article.vendor ? ` · Brand ${article.vendor}` : ""}
-            {article.mpn ? ` · MPN ${article.mpn}` : ""}
-          </Text>
-          <Text as="p" variant="bodySm" tone="subdued">
-            Structured fields: Brand {article.vendor || "—"} · MPN {article.mpn || "—"} · SKU{" "}
-            {article.sku || "—"}
-            {article.articleNumber ? ` · Article number ${article.articleNumber}` : " · Article number —"}
-            {oeReferences.length ? ` · OE ${oeReferences.join(", ")}` : " · OE —"}
-          </Text>
-          <Text as="p" variant="bodySm" tone="subdued">
-            Title is display-only and is never used as identity.
-          </Text>
-          {!count ? (
-            <Banner tone="warning">No fitment assigned</Banner>
-          ) : null}
-          {!fitmentEnabled ? (
-            <Text as="p" variant="bodySm" tone="subdued">
-              Vehicle controls stay unavailable until this Shopify product is mapped to an Ocean
-              catalogue article. {MAPPING_REQUIRED_LABEL}. {MAPPING_REQUIRED_DETAIL}
-            </Text>
-          ) : null}
-        </BlockStack>
-      </Card>
 
       {operationalError ? (
         <Banner tone="critical" title="CAR FITMENT">
@@ -477,51 +457,38 @@ export function CarFitmentPanel({
         </Banner>
       ) : null}
       {status ? (
-        <Banner tone="success" title="CAR FITMENT">
-          {status}
-        </Banner>
+        <Banner tone="success">{status}</Banner>
       ) : null}
 
-      {view === "list" ? (
+      {fitmentEnabled ? (
         <Card>
           <BlockStack gap="300">
-            <InlineStack gap="200">
-              <Button variant="primary" disabled={!fitmentEnabled} onClick={() => openPicker("add")}>
-                + Add vehicle
-              </Button>
-              <Button disabled={!fitmentEnabled} onClick={() => openPicker("bulk")}>
-                Bulk add
-              </Button>
-              <Button disabled={!fitmentEnabled} onClick={() => fitmentEnabled && setView("import")}>
-                Import fitment
-              </Button>
-              <Button onClick={() => setView("list")}>Manage</Button>
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="h2" variant="headingMd">
+                Vehicle Compatibility
+              </Text>
+              <Badge>{`Fitment: ${count} vehicles`}</Badge>
             </InlineStack>
             {fitments.map((row) => {
               const key = String(row.id || row.vehicle_id || row.vehicle_key);
               return (
-                <BlockStack key={key} gap="100">
-                  <Text as="p" variant="bodyMd">
-                    ✓ {row.title || `${row.make_name || ""} ${row.model_name || ""}`.trim()}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    {row.detail ||
-                      [row.engine, row.engine_code, row.year_range].filter(Boolean).join(" | ")}
-                  </Text>
-                  <Text as="p" variant="bodySm">
-                    {row.source_label || row.source} · {row.verification_status} ·{" "}
-                    {storefrontLabel(String(row.verification_status || ""), row.public_fits)}
-                  </Text>
+                    <InlineStack key={key} align="space-between" blockAlign="center">
+                  <BlockStack gap="100">
+                    <Text as="p" variant="bodyMd">
+                      {row.title || `${row.make_name || ""} ${row.model_name || ""}`.trim()}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      {[row.engine_code, powerLabel(row), row.year_range].filter(Boolean).join(" · ")}
+                      {" · "}
+                      {storefrontLabel(String(row.verification_status || ""), row.public_fits)}
+                    </Text>
+                  </BlockStack>
                   <InlineStack gap="200">
                     <Button
                       onClick={() => {
                         setEditing(row);
                         setSource(row.source || "manual");
                         setVerification(row.verification_status || UNVERIFIED);
-                        setPosition(row.position || "");
-                        setSide(row.side || "");
-                        setNote(row.fitment_note || "");
-                        setView("edit");
                       }}
                     >
                       Edit
@@ -534,44 +501,26 @@ export function CarFitmentPanel({
                       Remove
                     </Button>
                   </InlineStack>
-                </BlockStack>
+                </InlineStack>
               );
             })}
-          </BlockStack>
-        </Card>
-      ) : null}
 
-      {view === "add" || view === "bulk" ? (
-        <Card>
-          <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">
-              Vehicle selection
-            </Text>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Search queries Ocean on the server. Browsing Make → Model
-              {skipGeneration ? "" : " → Generation"} → Motorization filters available vehicles.
-              Make and model never select motorisations automatically. Check a motorisation to select it.
-            </Text>
             <TextField
-              label="Search Ocean catalogue"
+              label="Search"
               value={search}
-              placeholder="C-CLASS (W205), AMG C 43, engine code"
-              helpText="Server-side Ocean search. Results are not loaded into a Shopify vehicle cache."
+              placeholder="Search make, model, engine, chassis..."
               autoComplete="off"
               onChange={runSearch}
             />
             {hits.length ? (
               <BlockStack gap="100">
-                <Text as="p" variant="bodySm">
-                  Search results — check to select
-                </Text>
                 {hits.map((row) => {
                   const key = oceanVehicleId(row);
                   if (!key) return null;
                   return (
                     <Checkbox
                       key={`search-${key}`}
-                      label={vehicleLabel(row, key)}
+                      label={motorisationLine(row)}
                       checked={!!checked[key]}
                       onChange={(val) => toggleChecked(key, val)}
                     />
@@ -579,9 +528,7 @@ export function CarFitmentPanel({
                 })}
               </BlockStack>
             ) : null}
-            <Text as="p" variant="bodySm" tone="subdued">
-              Or browse by dropdown. Changing Make or Model only refreshes the motorisation list.
-            </Text>
+
             <Select
               label="Make"
               options={[{ label: "Select make", value: "" }, ...makes.map((row) => ({ label: row.name, value: row.id }))]}
@@ -599,36 +546,22 @@ export function CarFitmentPanel({
               onChange={onModel}
             />
             {!skipGeneration ? (
-            <Select
-              label="Generation"
-              disabled={!modelId}
-              options={[
-                { label: "Select generation", value: "" },
-                ...generations.map((row) => ({
-                  label: `${row.name}${row.year_range ? " " + row.year_range : ""}`,
-                  value: row.id,
-                })),
-              ]}
-              value={generationId}
-              onChange={onGeneration}
-            />
-            ) : null}
-            {view === "add" ? (
               <Select
-                label="Motorization"
-                disabled={!modelId || (!skipGeneration && !generationId)}
-                helpText="Selecting a motorization from this list is the only way this dropdown selects a vehicle."
+                label="Generation"
+                disabled={!modelId}
                 options={[
-                  { label: "Select motorization", value: "" },
-                  ...engines.map((row) => ({
-                    label: `${row.detail || row.customer_label || row.engine || ""}`.trim(),
-                    value: oceanVehicleId(row),
-                  })).filter((row) => row.value),
+                  { label: "Select generation", value: "" },
+                  ...generations.map((row) => ({
+                    label: `${row.name}${row.year_range ? " " + row.year_range : ""}`,
+                    value: row.id,
+                  })),
                 ]}
-                value={engineId}
-                onChange={setEngineId}
+                value={generationId}
+                onChange={onGeneration}
               />
-            ) : (
+            ) : null}
+
+            {engines.length ? (
               <BlockStack gap="100">
                 <Text as="p" variant="bodySm">
                   Motorization — filtered list, none selected until checked
@@ -639,146 +572,199 @@ export function CarFitmentPanel({
                   return (
                     <Checkbox
                       key={`engine-${key}`}
-                      label={vehicleLabel(row, key)}
+                      label={motorisationLine(row)}
                       checked={!!checked[key]}
                       onChange={(val) => toggleChecked(key, val)}
                     />
                   );
                 })}
+                {engines.length > 1 ? (
+                  <Button onClick={() => setConfirmBulk(true)}>
+                    {`Select all ${engines.length} motorisations`}
+                  </Button>
+                ) : null}
               </BlockStack>
-            )}
-            {engineId
-              ? engines
-                  .filter((row) => oceanVehicleId(row) === engineId)
-                  .map((row) => (
-                    <Banner key={oceanVehicleId(row)}>
-                      {row.make_name} → {row.model_name}
-                      {skipGeneration ? "" : ` → ${row.generation_name || ""}`} → {row.engine} →{" "}
-                      {row.engine_code} → {row.year_range} → {oceanVehicleId(row)}
-                    </Banner>
-                  ))
-              : null}
+            ) : null}
+
             {selectedEngines.length ? (
-              <Banner tone="info" title="Selected vehicles">
-                {selectedEngines.map((row) => (
-                  <p key={oceanVehicleId(row)}>{vehicleLabel(row, oceanVehicleId(row))}</p>
-                ))}
+              <Banner tone="info" title={`Selected vehicles (${selectedEngines.length})`}>
+                {selectedEngines.map((row) => {
+                  const key = oceanVehicleId(row);
+                  return (
+                    <InlineStack key={key} gap="200" blockAlign="center">
+                      <Text as="p" variant="bodySm">
+                        {motorisationLine(row)}
+                      </Text>
+                      <Button onClick={() => toggleChecked(key, false)}>Remove</Button>
+                    </InlineStack>
+                  );
+                })}
               </Banner>
             ) : (
               <Text as="p" variant="bodySm" tone="subdued">
-                No vehicles selected. Filtering Make/Model only lists motorisations.
+                No vehicles selected. Choosing a make or model only filters the list.
               </Text>
             )}
-            <Select
-              label="Fitment source"
-              options={sources.map((row) => ({ label: row.label, value: row.id }))}
-              value={source}
-              onChange={setSource}
-            />
-            <Select
-              label="Verification"
-              options={statuses.map((row) => ({ label: row.replace("_", " "), value: row }))}
-              value={verification}
-              onChange={setVerification}
-            />
-            <TextField label="Position" value={position} autoComplete="off" onChange={setPosition} />
-            <TextField label="Side" value={side} autoComplete="off" onChange={setSide} />
-            <TextField label="Fitment note" value={note} autoComplete="off" onChange={setNote} />
+
             <InlineStack gap="200">
               <Button
                 variant="primary"
                 loading={busy}
                 disabled={!addIds.length || mappingRequired}
-                onClick={addSelected}
+                onClick={() => setConfirmSave(true)}
               >
-                {view === "bulk" ? `Add ${addIds.length} vehicles` : "Add compatibility"}
+                Save Fitment
               </Button>
-              <Button onClick={() => setView("list")}>Cancel</Button>
-            </InlineStack>
-            {mappingRequired ? (
-              <Text as="p" variant="bodySm" tone="subdued">
-                Save is disabled until this Shopify product is mapped to an Ocean catalogue article.
-              </Text>
-            ) : null}
-          </BlockStack>
-        </Card>
-      ) : null}
-
-      {view === "import" ? (
-        <Card>
-          <BlockStack gap="300">
-            <Text as="p" variant="bodyMd">
-              One Ocean vehicle_id per line, or CSV with vehicle_id, position, side, source,
-              verification_status. Descriptions are not stored as free text. Import defaults to UNVERIFIED.
-            </Text>
-            <TextField
-              label="Vehicle IDs or CSV"
-              value={importText}
-              multiline={6}
-              autoComplete="off"
-              onChange={setImportText}
-            />
-            <Select
-              label="Fitment source"
-              options={sources.map((row) => ({ label: row.label, value: row.id }))}
-              value={source}
-              onChange={setSource}
-            />
-            <Select
-              label="Verification"
-              options={statuses.map((row) => ({ label: row.replace("_", " "), value: row }))}
-              value={verification}
-              onChange={setVerification}
-            />
-            <InlineStack gap="200">
-              <Button variant="primary" loading={busy} disabled={!importText || mappingRequired} onClick={importRows}>
-                Import fitment
-              </Button>
-              <Button onClick={() => setView("list")}>Cancel</Button>
             </InlineStack>
           </BlockStack>
         </Card>
       ) : null}
 
-      {view === "edit" && editing ? (
+      {fitmentEnabled ? (
+        <Card>
+          <BlockStack gap="200">
+            <Button onClick={() => setShowAdvanced((value) => !value)} disclosure={showAdvanced ? "up" : "down"}>
+              Advanced
+            </Button>
+            <Collapsible open={showAdvanced} id="car-fitment-advanced">
+              <BlockStack gap="300">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Bulk and import are separate from ordinary selection. Import cannot skip article mapping
+                  or review.
+                </Text>
+                <Select
+                  label="Fitment source"
+                  options={(listing.sources || [{ id: "manual", label: "Manual" }]).map((row) => ({
+                    label: row.label,
+                    value: row.id,
+                  }))}
+                  value={source}
+                  onChange={setSource}
+                />
+                <TextField
+                  label="Import vehicle IDs or CSV"
+                  value={importText}
+                  multiline={4}
+                  autoComplete="off"
+                  onChange={setImportText}
+                />
+                <Button loading={busy} disabled={!importText || mappingRequired} onClick={importRows}>
+                  Import fitment
+                </Button>
+              </BlockStack>
+            </Collapsible>
+          </BlockStack>
+        </Card>
+      ) : null}
+
+      {editing ? (
         <Card>
           <BlockStack gap="300">
             <Text as="p" variant="bodyMd">
-              ✓ {editing.title}
-            </Text>
-            <Text as="p" variant="bodySm" tone="subdued">
-              {editing.detail}
+              {editing.title}
             </Text>
             <Select
               label="Fitment source"
-              options={sources.map((row) => ({ label: row.label, value: row.id }))}
+              options={(listing.sources || [{ id: "manual", label: "Manual" }]).map((row) => ({
+                label: row.label,
+                value: row.id,
+              }))}
               value={source}
               onChange={setSource}
             />
             <Select
-              label="Verification"
-              options={statuses.map((row) => ({ label: row.replace("_", " "), value: row }))}
+              label="Review state"
+              options={(listing.verification_statuses || ["VERIFIED", "UNVERIFIED", "NEEDS_REVIEW"]).map((row) => ({
+                label: row.replace("_", " "),
+                value: row,
+              }))}
               value={verification}
               onChange={setVerification}
             />
-            <TextField label="Position" value={position} autoComplete="off" onChange={setPosition} />
-            <TextField label="Side" value={side} autoComplete="off" onChange={setSide} />
-            <TextField label="Fitment note" value={note} autoComplete="off" onChange={setNote} />
             <InlineStack gap="200">
-              <Button variant="primary" loading={busy} disabled={mappingRequired} onClick={saveEdit}>
+              <Button
+                variant="primary"
+                loading={busy}
+                onClick={async () => {
+                  await mutate({
+                    action: "update",
+                    fitment_id: editing.id,
+                    source,
+                    verification_status: verification,
+                  });
+                  setEditing(null);
+                }}
+              >
                 Save
               </Button>
-              <Button onClick={() => setView("list")}>Cancel</Button>
+              <Button onClick={() => setEditing(null)}>Cancel</Button>
             </InlineStack>
           </BlockStack>
         </Card>
       ) : null}
 
-      <Text as="p" variant="bodySm" tone="subdued">
-        Only explicit Ocean product_fitment rows count. Final selected identity is ocean_vehicle_id
-        (ovh-*). Title, raw catalogue.type.id and Shopify vehicle GIDs are never public identity.
-        Generation is skipped when skip_generation=true. The Shopify vehicle index is not used here.
-      </Text>
+      <Card>
+        <BlockStack gap="200">
+          <Button onClick={() => setShowDiagnostics((value) => !value)} disclosure={showDiagnostics ? "up" : "down"}>
+            Diagnostics
+          </Button>
+          <Collapsible open={showDiagnostics} id="car-fitment-diagnostics">
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Product {article.numericId || "—"} · variant {article.variantNumericId || "—"}
+              </Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Title is display-only and is never used as identity.
+              </Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Only explicit saved compatibility counts. Unverified is not verified. OE overlap never
+                creates verified fitment.
+              </Text>
+            </BlockStack>
+          </Collapsible>
+        </BlockStack>
+      </Card>
+
+      <Modal
+        open={confirmSave}
+        onClose={() => setConfirmSave(false)}
+        title="Save Fitment"
+        primaryAction={{
+          content: "Confirm save",
+          onAction: saveFitment,
+          loading: busy,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setConfirmSave(false) }]}
+      >
+        <Modal.Section>
+          <Text as="p" variant="bodyMd">
+            {`You are assigning this product to ${addIds.length} vehicle motorisations.`}
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            Compatibility is saved for review. It is not marked verified automatically.
+          </Text>
+        </Modal.Section>
+      </Modal>
+
+      <Modal
+        open={confirmBulk}
+        onClose={() => setConfirmBulk(false)}
+        title="Select all motorisations"
+        primaryAction={{
+          content: "Select all",
+          onAction: selectAllFiltered,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setConfirmBulk(false) }]}
+      >
+        <Modal.Section>
+          <Text as="p" variant="bodyMd">
+            {`You are about to assign ${engines.length} motorisations.`}
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            This only checks the boxes. Fitment is not saved until you confirm Save Fitment.
+          </Text>
+        </Modal.Section>
+      </Modal>
     </BlockStack>
   );
 }

@@ -2,12 +2,12 @@ import * as React from "react";
 import { Banner, BlockStack, Button, Card, InlineStack, Text, TextField } from "@shopify/polaris";
 import {
   CREATE_OCEAN_ARTICLE,
-  DISCOVERY_EVIDENCE_LABEL,
-  MAP_CATALOGUE_ARTICLE,
   MAP_THIS_ARTICLE,
   MAPPING_MAPPED_LABEL,
   MAPPING_REQUIRED_DETAIL,
   MAPPING_REQUIRED_LABEL,
+  NO_MATCHING_ARTICLE,
+  SUGGESTED_MATCHES,
   articleCreatePreview,
   catalogueMappingRequired,
   structuredMpn,
@@ -45,6 +45,7 @@ type Candidate = {
   classification?: { category?: string; system_group?: string; subcategory?: string };
   fitment_count?: number;
   mapping_reason?: string;
+  match_label?: string;
   evidence_kind?: string;
   discovery_only?: boolean;
 };
@@ -54,7 +55,6 @@ type Listing = {
   error?: string;
   unmapped?: boolean;
   catalogue_mapped?: boolean;
-  catalogue_mapping_label?: string;
   article?: {
     ocean_article_id?: string;
     sku?: string;
@@ -63,13 +63,7 @@ type Listing = {
     article_number?: string;
     name?: string;
   };
-  mapping?: {
-    ocean_article_id?: string;
-    mapping_method?: string;
-    mapped_at?: string;
-    mapped_by?: string;
-    verified_fitment?: boolean;
-  };
+  mapping?: { ocean_article_id?: string };
 };
 
 async function shopifySessionHeaders(): Promise<Record<string, string>> {
@@ -79,7 +73,7 @@ async function shopifySessionHeaders(): Promise<Record<string, string>> {
     const token = bridge?.idToken ? await bridge.idToken() : "";
     if (token) headers.Authorization = `Bearer ${token}`;
   } catch {
-    // App Bridge token is optional when the Remix session cookie is already present.
+    // Session cookie is enough when App Bridge token is unavailable.
   }
   return headers;
 }
@@ -112,10 +106,11 @@ export function CatalogueMappingCard({
   onMapped: (payload: Listing) => void;
 }) {
   const mappingRequired = catalogueMappingRequired(listing as Record<string, unknown>);
-  const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [searched, setSearched] = React.useState(false);
   const [error, setError] = React.useState("");
   const [candidates, setCandidates] = React.useState<Candidate[]>([]);
+  const [showCreate, setShowCreate] = React.useState(false);
   const [createStep, setCreateStep] = React.useState<"form" | "confirm">("form");
   const preview = React.useMemo(
     () => articleCreatePreview(article, classification),
@@ -133,6 +128,8 @@ export function CatalogueMappingCard({
     setArticleNumber(preview.article_number);
     setOeText((preview.oe_references || []).join("\n"));
     setCreateStep("form");
+    setShowCreate(false);
+    setSearched(false);
   }, [preview, article.numericId]);
 
   const searchCandidates = React.useCallback(async () => {
@@ -154,19 +151,24 @@ export function CatalogueMappingCard({
       });
       const payload = await res.json();
       setCandidates(payload.candidates || []);
+      setSearched(true);
+      if (!payload.candidates || !payload.candidates.length) setShowCreate(true);
       if (payload.ok === false && payload.error && payload.error !== "unmapped") {
         setError(String(payload.error));
+        setShowCreate(true);
       }
     } catch (err) {
       setCandidates([]);
+      setSearched(true);
+      setShowCreate(true);
       setError(String((err as Error)?.message || err));
     }
     setBusy(false);
   }, [article]);
 
   React.useEffect(() => {
-    if (open && mappingRequired) searchCandidates();
-  }, [open, mappingRequired, searchCandidates]);
+    if (mappingRequired) searchCandidates();
+  }, [mappingRequired, searchCandidates]);
 
   const mapCandidate = async (candidate: Candidate) => {
     setBusy(true);
@@ -178,17 +180,16 @@ export function CatalogueMappingCard({
       body: JSON.stringify({
         ...identity,
         ocean_article_id: candidate.ocean_article_id || candidate.sku,
-        mapping_evidence: candidate.mapping_reason,
+        mapping_evidence: candidate.match_label || candidate.mapping_reason,
         confirm: true,
       }),
     });
     const payload = await res.json();
     setBusy(false);
     if (!payload || payload.ok === false || payload.confirmation_required) {
-      setError(payload?.error || "Could not map catalogue article.");
+      setError(payload?.error || "Could not use this article.");
       return;
     }
-    setOpen(false);
     onMapped(payload);
   };
 
@@ -219,10 +220,9 @@ export function CatalogueMappingCard({
     const payload = await res.json();
     setBusy(false);
     if (!payload || payload.ok === false || payload.confirmation_required) {
-      setError(payload?.error || "Could not create Ocean article.");
+      setError(payload?.error || "Could not create catalogue article.");
       return;
     }
-    setOpen(false);
     onMapped(payload);
   };
 
@@ -234,149 +234,121 @@ export function CatalogueMappingCard({
       <BlockStack gap="300">
         <InlineStack align="space-between" blockAlign="center">
           <Text as="h2" variant="headingMd">
-            Catalogue Mapping
+            Catalogue Article
           </Text>
           <Text as="p" variant="bodySm">
-            Status: {mappingRequired ? "Mapping required" : "Mapped"}
+            {mappingRequired ? MAPPING_REQUIRED_LABEL : MAPPING_MAPPED_LABEL}
           </Text>
         </InlineStack>
-        {mappingRequired ? (
-          <Banner tone="warning" title={MAPPING_REQUIRED_LABEL}>
-            <p>{MAPPING_REQUIRED_DETAIL}</p>
-            <p>This mapping is not VERIFIED vehicle fitment.</p>
-          </Banner>
-        ) : (
+
+        {!mappingRequired ? (
           <Banner tone="success" title={MAPPING_MAPPED_LABEL}>
             <p>
-              ✓ Mapped to Ocean Article {mappedId || "—"}
-              {mappedArticle.brand ? ` · ${mappedArticle.brand}` : ""}
-              {mappedArticle.sku ? ` · ${mappedArticle.sku}` : ""}
+              {mappedArticle.brand || article.vendor} {mappedArticle.article_number || mappedArticle.sku || mappedId}
             </p>
-            <p>Mapping is not VERIFIED vehicle fitment.</p>
           </Banner>
-        )}
-        {mappingRequired ? (
-          <InlineStack gap="200">
-            <Button variant="primary" onClick={() => setOpen(true)}>
-              {MAP_CATALOGUE_ARTICLE}
-            </Button>
-          </InlineStack>
-        ) : null}
-
-        {open && mappingRequired ? (
+        ) : (
           <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">
-              Find existing Ocean article
-            </Text>
             <Text as="p" variant="bodySm" tone="subdued">
-              Search uses structured evidence only: Shopify product ID, variant ID, exact SKU,
-              Brand + MPN when MPN exists, article number, then OE references as {DISCOVERY_EVIDENCE_LABEL}.
-              Title is never identity. No candidate is mapped until you confirm.
+              {MAPPING_REQUIRED_DETAIL}
             </Text>
-            <InlineStack gap="200">
-              <Button onClick={searchCandidates} loading={busy}>
-                Search existing articles
-              </Button>
-            </InlineStack>
-            {candidates.length ? (
-              candidates.map((row) => (
-                <BlockStack key={row.ocean_article_id || row.sku} gap="100">
-                  <Text as="p" variant="bodyMd">
-                    Ocean article {row.ocean_article_id || row.sku}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Brand {row.brand || "—"} · MPN {row.mpn || "—"} · SKU {row.sku || "—"} · Article{" "}
-                    {row.article_number || "—"}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    {row.description || "No description"}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    OE {(row.oe_references || []).join(", ") || "—"}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Classification {[row.classification?.category, row.classification?.system_group, row.classification?.subcategory]
-                      .filter(Boolean)
-                      .join(" → ") || "—"}
-                    {" · "}Fitment {row.fitment_count || 0} vehicles
-                  </Text>
-                  <Text as="p" variant="bodySm">
-                    {row.discovery_only ? `${DISCOVERY_EVIDENCE_LABEL}: ` : "Evidence: "}
-                    {row.mapping_reason}
-                  </Text>
-                  <Button loading={busy} onClick={() => mapCandidate(row)}>
-                    {MAP_THIS_ARTICLE}
-                  </Button>
-                </BlockStack>
-              ))
-            ) : (
-              <Text as="p" variant="bodySm" tone="subdued">
-                No legitimate existing Ocean article matched this Shopify identity. You can create one.
+            {busy && !searched ? (
+              <Text as="p" variant="bodySm">
+                Searching catalogue…
               </Text>
-            )}
-
-            <Text as="h3" variant="headingSm">
-              {CREATE_OCEAN_ARTICLE}
-            </Text>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Pre-filled from structured Shopify fields only. MPN stays blank when Shopify MPN is
-              missing. Digits in the display title are not copied.
-            </Text>
-            <TextField label="Brand" value={brand} autoComplete="off" onChange={setBrand} />
-            <TextField label="SKU" value={sku} autoComplete="off" onChange={setSku} />
-            <TextField
-              label="Article number"
-              value={articleNumber}
-              autoComplete="off"
-              onChange={setArticleNumber}
-            />
-            <TextField
-              label="MPN"
-              value={mpn}
-              autoComplete="off"
-              disabled
-              helpText="Structured Shopify MPN only. Title is never used to fill this field."
-              onChange={() => undefined}
-            />
-            <TextField
-              label="OE references"
-              value={oeText}
-              multiline={4}
-              autoComplete="off"
-              helpText="Structured OE fields. Overlap is discovery evidence, not verified fitment."
-              onChange={setOeText}
-            />
-            <Text as="p" variant="bodySm">
-              Classification: {classificationPath(classification) || "—"}
-            </Text>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Shopify product ID {article.numericId || "—"} · variant {article.variantNumericId || "—"}
-            </Text>
-            {createStep === "confirm" ? (
-              <Banner tone="warning" title="Confirm create">
-                <p>
-                  This will create Ocean article {sku || "—"} and map Shopify product {article.numericId}.
-                  It will not create vehicle fitment and will not mark compatibility VERIFIED.
-                </p>
+            ) : null}
+            {candidates.length ? (
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">
+                  {SUGGESTED_MATCHES}
+                </Text>
+                {candidates.map((row) => (
+                  <BlockStack key={row.ocean_article_id || row.sku} gap="100">
+                    <Text as="p" variant="bodyMd">
+                      {row.brand || "—"} {row.article_number || row.sku || ""}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      MPN {row.mpn || "—"} · {row.description || "No description"}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      OE {(row.oe_references || []).join(", ") || "—"}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      {[row.classification?.category, row.classification?.system_group, row.classification?.subcategory]
+                        .filter(Boolean)
+                        .join(" → ") || "—"}
+                      {" · "}
+                      {row.fitment_count || 0} vehicles
+                    </Text>
+                    <Text as="p" variant="bodySm">
+                      Why it matched: {row.match_label || row.mapping_reason}
+                      {row.discovery_only ? " (discovery only — not proof this is the same article)" : ""}
+                    </Text>
+                    <Button loading={busy} onClick={() => mapCandidate(row)}>
+                      {MAP_THIS_ARTICLE}
+                    </Button>
+                  </BlockStack>
+                ))}
+              </BlockStack>
+            ) : searched ? (
+              <Banner tone="warning" title={NO_MATCHING_ARTICLE}>
+                <p>Create a catalogue article from this product’s brand, SKU, article number and OE references.</p>
               </Banner>
             ) : null}
-            <InlineStack gap="200">
-              <Button variant="primary" loading={busy} onClick={createArticle}>
-                {createStep === "confirm" ? "Confirm create and map" : CREATE_OCEAN_ARTICLE}
-              </Button>
-              <Button
-                onClick={() => {
-                  setOpen(false);
-                  setCreateStep("form");
-                }}
-              >
-                Cancel
-              </Button>
-            </InlineStack>
+
+            {showCreate || searched ? (
+              <BlockStack gap="300">
+                <Text as="h3" variant="headingSm">
+                  {CREATE_OCEAN_ARTICLE}
+                </Text>
+                <TextField label="Brand" value={brand} autoComplete="off" onChange={setBrand} />
+                <TextField label="SKU" value={sku} autoComplete="off" onChange={setSku} />
+                <TextField
+                  label="Article number"
+                  value={articleNumber}
+                  autoComplete="off"
+                  onChange={setArticleNumber}
+                />
+                <TextField
+                  label="MPN"
+                  value={mpn}
+                  autoComplete="off"
+                  disabled
+                  helpText="Left blank when the product has no MPN. The title is not used."
+                  onChange={() => undefined}
+                />
+                <TextField
+                  label="OE references"
+                  value={oeText}
+                  multiline={4}
+                  autoComplete="off"
+                  onChange={setOeText}
+                />
+                <Text as="p" variant="bodySm">
+                  Category: {classificationPath(classification) || "—"}
+                </Text>
+                {createStep === "confirm" ? (
+                  <Banner tone="warning" title="Confirm create">
+                    <p>
+                      Create catalogue article {sku || "—"} for this product. This does not assign vehicles
+                      and does not mark fitment as verified.
+                    </p>
+                  </Banner>
+                ) : null}
+                <InlineStack gap="200">
+                  <Button variant="primary" loading={busy} onClick={createArticle}>
+                    {createStep === "confirm" ? "Confirm create" : CREATE_OCEAN_ARTICLE}
+                  </Button>
+                  {createStep === "confirm" ? (
+                    <Button onClick={() => setCreateStep("form")}>Back</Button>
+                  ) : null}
+                </InlineStack>
+              </BlockStack>
+            ) : null}
           </BlockStack>
-        ) : null}
+        )}
         {error ? (
-          <Banner tone="critical" title="Catalogue mapping">
+          <Banner tone="critical" title="Catalogue article">
             {error}
           </Banner>
         ) : null}

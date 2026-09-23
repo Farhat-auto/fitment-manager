@@ -193,7 +193,7 @@ check("catalogue mapping required is not VERIFIED fitment", () => {
   assert.equal(catalogueMappingRequired({ unmapped: false, count: 1 }), false);
   assert.equal(defaultVerification("add", VERIFIED, "manual"), VERIFIED);
   const mappingSrc = source("app/ocean/identity.ts");
-  assert.match(mappingSrc, /Catalogue mapping required/);
+  assert.match(mappingSrc, /No article mapped/);
   assert.match(mappingSrc, /Never treat mapping evidence as VERIFIED/);
 });
 
@@ -218,8 +218,8 @@ check("unmapped product cannot save fitment", () => {
 
 check("mapping candidates are evidence only", () => {
   const mappingUi = source("app/components/CatalogueMapping.tsx");
-  assert.match(mappingUi, /DISCOVERY EVIDENCE|DISCOVERY_EVIDENCE_LABEL/);
-  assert.match(mappingUi, /No candidate is mapped until you confirm/);
+  assert.match(mappingUi, /DISCOVERY EVIDENCE|DISCOVERY_EVIDENCE_LABEL|discovery only/);
+  assert.match(mappingUi, /Use this article|MAP_THIS_ARTICLE/);
   assert.doesNotMatch(mappingUi, /autoMap|auto-map/);
 });
 

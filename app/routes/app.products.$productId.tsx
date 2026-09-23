@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
-import { Banner, BlockStack, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
+import { BlockStack, Page } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
 import { ProductClassification } from "../components/ProductClassification";
@@ -71,6 +71,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         mpn: "",
         articleNumber: "",
         oeReferences: [] as string[],
+        imageUrl: "",
         variantId: "",
         numericId,
         variantNumericId: "",
@@ -144,50 +145,25 @@ export default function ProductCarFitment() {
   const { article, listing, classification, classificationOptions } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const location = useLocation();
-  const mapped = Boolean(article.numericId && (article.sku || article.vendor));
 
   return (
     <Page
-      title={article.sku || article.numericId || "Product"}
-      subtitle="CAR FITMENT"
+      title="CAR FITMENT"
       backAction={{
         content: "Back to Products",
         onAction: () => navigate(appHref("/app/products", location.search || "")),
       }}
     >
       <BlockStack gap="400">
-        <Card>
-          <InlineStack gap="300" blockAlign="center">
-            <Thumbnail
-              source="https://cdn.shopify.com/static/images/placeholders/product-1.png"
-              alt={article.sku || article.numericId}
-              size="medium"
-            />
-            <BlockStack gap="100">
-              <Text as="h2" variant="headingMd">
-                {article.vendor || "Product"} {article.sku}
-              </Text>
-              <Text as="p" variant="bodySm" tone="subdued">
-                Display title is not an identity key: {article.title || "—"}
-              </Text>
-            </BlockStack>
-          </InlineStack>
-        </Card>
-        <ProductClassification
-          productGid={article.id || `gid://shopify/Product/${article.numericId}`}
-          classification={classification}
-          categories={classificationOptions.categories || []}
-        />
-        {!mapped ? (
-          <Banner tone="warning">
-            Shopify identity is incomplete. CAR FITMENT still loads. Add SKU or Brand+MPN before saving
-            compatibility.
-          </Banner>
-        ) : null}
         <CarFitmentPanel
           article={article}
           initialListing={listing as any}
           classification={classification}
+        />
+        <ProductClassification
+          productGid={article.id || `gid://shopify/Product/${article.numericId}`}
+          classification={classification}
+          categories={classificationOptions.categories || []}
         />
       </BlockStack>
     </Page>

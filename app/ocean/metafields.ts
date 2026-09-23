@@ -120,6 +120,7 @@ export function productFromAdminNode(node: any) {
     mpn: String((node && node.mpn && node.mpn.value) || ""),
     articleNumber: String((node && node.articleNumber && node.articleNumber.value) || ""),
     oeReferences: parseListMetafield(node && node.oeRefs),
+    imageUrl: String((node && node.featuredImage && node.featuredImage.url) || ""),
     variantId: String(variant.id || ""),
     numericId: String((node && node.id) || "").split("/").pop() || "",
     variantNumericId: String(variant.id || "").split("/").pop() || "",
