@@ -53,6 +53,35 @@ export function numericId(value: unknown): string {
   return match ? match[1] : "";
 }
 
+/** Public Circosoft identity. Never raw catalogue.type.id and never a title. */
+export function isCanonicalOceanVehicleId(value: unknown): boolean {
+  return /^ovh-[a-z0-9]+$/i.test(text(value));
+}
+
+export function isRawOdooId(value: unknown): boolean {
+  const raw = text(value);
+  return Boolean(raw) && /^\d+$/.test(raw);
+}
+
+export function isShopifyMetaobjectGid(value: unknown): boolean {
+  return text(value).includes("gid://shopify/Metaobject/");
+}
+
+export function canonicalOceanVehicleId(row: {
+  ocean_vehicle_id?: string;
+  vehicle_id?: string;
+  vehicle_key?: string;
+  id?: string;
+  title?: string;
+} | null | undefined): string {
+  const candidates = [row?.ocean_vehicle_id, row?.vehicle_id, row?.vehicle_key, row?.id];
+  for (const candidate of candidates) {
+    if (isCanonicalOceanVehicleId(candidate)) return text(candidate);
+    if (isRawOdooId(candidate) || isShopifyMetaobjectGid(candidate)) continue;
+  }
+  return "";
+}
+
 export function stripTitle(payload: Record<string, unknown> | null | undefined) {
   const next = { ...(payload || {}) };
   delete next.title;

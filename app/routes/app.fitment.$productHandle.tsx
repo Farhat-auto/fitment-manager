@@ -1237,6 +1237,13 @@ export default function FitmentEditor() {
       }}
     >
       <BlockStack gap="400">
+        <Banner tone="warning" title="Legacy Shopify vehicle-metaobject editor">
+          <p>
+            This /app/fitment/:handle route is kept for rollback/reference. It is not the normal
+            product workflow and should be treated as read-only. Open Manage Fitment from Products
+            to use Ocean CAR FITMENT at /app/products/:productId.
+          </p>
+        </Banner>
         {shopifyThrottled || compatibilityUnavailable ? (
           <Banner title="Shopify Admin API throttled" tone="warning">
             <p>

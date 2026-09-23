@@ -13,6 +13,7 @@ import {
 } from "@shopify/polaris";
 import {
   UNVERIFIED,
+  canonicalOceanVehicleId,
   listingBelongsTo,
   resetProductScreen,
   storefrontLabel,
@@ -22,6 +23,7 @@ type VehicleRow = {
   id?: string;
   vehicle_id?: string;
   vehicle_key?: string;
+  ocean_vehicle_id?: string;
   title?: string;
   detail?: string;
   make_name?: string;
@@ -75,6 +77,14 @@ function qs(params: Record<string, string | undefined>) {
     .join("&");
 }
 
+function withVehicles<T extends { has_vehicles?: boolean; type_count?: number }>(rows: T[]): T[] {
+  return (rows || []).filter((row) => {
+    if (row.has_vehicles === false) return false;
+    if (typeof row.type_count === "number" && row.type_count <= 0) return false;
+    return true;
+  });
+}
+
 async function oceanGet(path: string) {
   const res = await fetch("/api/ocean" + path);
   if (!res.ok) {
@@ -101,14 +111,15 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   const [status, setStatus] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [hits, setHits] = React.useState<VehicleRow[]>([]);
-  const [makes, setMakes] = React.useState<Array<{ id: string; name: string }>>([]);
-  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string }>>([]);
+  const [makes, setMakes] = React.useState<Array<{ id: string; name: string; has_vehicles?: boolean; type_count?: number }>>([]);
+  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; has_vehicles?: boolean; type_count?: number }>>([]);
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
   const [engines, setEngines] = React.useState<VehicleRow[]>([]);
   const [makeId, setMakeId] = React.useState("");
   const [modelId, setModelId] = React.useState("");
   const [generationId, setGenerationId] = React.useState("");
   const [engineId, setEngineId] = React.useState("");
+  const [skipGeneration, setSkipGeneration] = React.useState(true);
   const [checked, setChecked] = React.useState<Record<string, boolean>>({});
   const [editing, setEditing] = React.useState<VehicleRow | null>(null);
   const [source, setSource] = React.useState("manual");
@@ -159,13 +170,14 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setModels([]);
     setGenerations([]);
     setEngines([]);
+    setSkipGeneration(true);
     setView("list");
   }, [article.numericId, initialListing]);
 
   React.useEffect(() => {
     reset();
-    oceanGet("/makes")
-      .then((payload) => setMakes(payload.makes || []))
+    oceanGet("/makes?has_vehicles=1")
+      .then((payload) => setMakes(withVehicles(payload.makes || [])))
       .catch((err) => setError(String(err?.message || err)));
     // Isolation: changing Shopify product ID wipes listing/search/checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,6 +205,8 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     [identity],
   );
 
+  const oceanVehicleId = (row: VehicleRow) => canonicalOceanVehicleId(row);
+
   const onMake = async (value: string) => {
     setMakeId(value);
     setModelId("");
@@ -201,10 +215,11 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setModels([]);
     setGenerations([]);
     setEngines([]);
+    setSkipGeneration(true);
     setChecked({});
     if (!value) return;
-    const payload = await oceanGet("/models?make_id=" + encodeURIComponent(value));
-    setModels(payload.models || []);
+    const payload = await oceanGet("/models?" + qs({ make_id: value, has_vehicles: "1" }));
+    setModels(withVehicles(payload.models || []));
   };
 
   const onModel = async (value: string) => {
@@ -216,9 +231,12 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setChecked({});
     if (!value || !makeId) return;
     const gens = await oceanGet("/generations?" + qs({ make_id: makeId, model_id: value }));
+    const skip = Boolean(gens.skip_generation) || !(gens.generations || []).length;
+    setSkipGeneration(skip);
     setGenerations(gens.generations || []);
+    if (!skip) return;
     const payload = await oceanGet("/engines?" + qs({ make_id: makeId, model_id: value }));
-    setEngines(payload.engines || payload.types || []);
+    setEngines((payload.engines || payload.types || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const onGeneration = async (value: string) => {
@@ -229,7 +247,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     const payload = await oceanGet(
       "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value }),
     );
-    setEngines(payload.engines || payload.types || []);
+    setEngines((payload.engines || payload.types || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const runSearch = async (value: string) => {
@@ -239,24 +257,23 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
       return;
     }
     const payload = await oceanGet("/vehicle-search?q=" + encodeURIComponent(value));
-    setHits(payload.results || []);
+    setHits((payload.results || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const selectedEngines = React.useMemo(() => {
-    if (view === "bulk") return engines.filter((row) => checked[row.vehicle_key || row.vehicle_id || row.id || ""]);
-    if (engineId) return engines.filter((row) => (row.vehicle_key || row.vehicle_id || row.id) === engineId);
-    return hits.filter((row) => checked[row.vehicle_id || row.vehicle_key || row.id || ""]);
+    if (view === "bulk") return engines.filter((row) => checked[oceanVehicleId(row)]);
+    if (engineId) return engines.filter((row) => oceanVehicleId(row) === engineId);
+    return hits.filter((row) => checked[oceanVehicleId(row)]);
   }, [view, engines, checked, engineId, hits]);
 
-  const addIds = selectedEngines
-    .map((row) => row.vehicle_id || row.vehicle_key || row.id)
-    .filter(Boolean) as string[];
+  const addIds = selectedEngines.map((row) => oceanVehicleId(row)).filter(Boolean);
 
   const addSelected = async () => {
     if (!addIds.length) return;
     const payload = await mutate({
       action: "add",
       vehicle_ids: addIds,
+      ocean_vehicle_ids: addIds,
       source,
       verification_status: verification,
       position,
@@ -410,7 +427,8 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               onChange={runSearch}
             />
             {hits.map((row) => {
-              const key = String(row.vehicle_id || row.vehicle_key || row.id);
+              const key = oceanVehicleId(row);
+              if (!key) return null;
               return (
                 <Checkbox
                   key={key}
@@ -443,6 +461,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               value={modelId}
               onChange={onModel}
             />
+            {!skipGeneration ? (
             <Select
               label="Generation"
               disabled={!modelId}
@@ -456,23 +475,25 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               value={generationId}
               onChange={onGeneration}
             />
+            ) : null}
             {view === "add" ? (
               <Select
-                label="Engine"
-                disabled={!modelId}
+                label="Motorization"
+                disabled={!modelId || (!skipGeneration && !generationId)}
                 options={[
-                  { label: "Select engine", value: "" },
+                  { label: "Select motorization", value: "" },
                   ...engines.map((row) => ({
                     label: `${row.detail || row.customer_label || row.engine || ""}`.trim(),
-                    value: String(row.vehicle_key || row.vehicle_id || row.id),
-                  })),
+                    value: oceanVehicleId(row),
+                  })).filter((row) => row.value),
                 ]}
                 value={engineId}
                 onChange={setEngineId}
               />
             ) : (
               engines.map((row) => {
-                const key = String(row.vehicle_key || row.vehicle_id || row.id);
+                const key = oceanVehicleId(row);
+                if (!key) return null;
                 return (
                   <Checkbox
                     key={key}
@@ -492,11 +513,12 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
             )}
             {engineId
               ? engines
-                  .filter((row) => (row.vehicle_key || row.vehicle_id || row.id) === engineId)
+                  .filter((row) => oceanVehicleId(row) === engineId)
                   .map((row) => (
-                    <Banner key={String(row.vehicle_id || row.vehicle_key)}>
-                      {row.make_name} → {row.model_name} → {row.generation_name} → {row.engine} →{" "}
-                      {row.engine_code} → {row.year_range} → {row.vehicle_id || row.vehicle_key}
+                    <Banner key={oceanVehicleId(row)}>
+                      {row.make_name} → {row.model_name}
+                      {skipGeneration ? "" : ` → ${row.generation_name || ""}`} → {row.engine} →{" "}
+                      {row.engine_code} → {row.year_range} → {oceanVehicleId(row)}
                     </Banner>
                   ))
               : null}
@@ -596,8 +618,9 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
       ) : null}
 
       <Text as="p" variant="bodySm" tone="subdued">
-        Only explicit Ocean product_fitment rows count. Title, tags, vendor, type, collection and
-        description are never used. Stored relationship is always canonical Ocean vehicle_id.
+        Only explicit Ocean product_fitment rows count. Final selected identity is ocean_vehicle_id
+        (ovh-*). Title, raw catalogue.type.id and Shopify vehicle GIDs are never public identity.
+        Generation is skipped when skip_generation=true. The Shopify vehicle index is not used here.
       </Text>
     </BlockStack>
   );

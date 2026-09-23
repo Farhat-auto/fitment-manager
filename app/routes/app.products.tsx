@@ -28,6 +28,7 @@ import {
   parentCatalogCategoryIdFromSystemGroupNode,
 } from "../utils/catalogMetaobjectParents.server";
 import { appHref } from "../embedded-nav";
+import { numericId } from "../ocean/identity";
 
 type Option = { value: string; label: string };
 
@@ -1137,7 +1138,7 @@ export default function Products() {
 
                     <InlineStack gap="200" wrap>
                       <RemixLink
-                        to={appHref(`/app/fitment/${encodeURIComponent(p.handle)}`, location.search || "")}
+                        to={appHref(`/app/products/${numericId(p.id)}`, location.search || "")}
                         style={{ textDecoration: "none" }}
                       >
                         <Button variant="primary">Manage Fitment</Button>

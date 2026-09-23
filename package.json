@@ -19,7 +19,8 @@
     "test:fitment-throttle": "node --experimental-strip-types tests/fitment-throttle.test.ts",
     "test:fitment-cascade": "node --experimental-strip-types tests/fitment-cascade.test.ts",
     "test:fitment-index": "node --experimental-strip-types tests/fitment-index-state.test.ts",
-    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index"
+    "test:ocean-picker": "node --experimental-strip-types tests/ocean-vehicle-picker.test.ts",
+    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index && npm run test:ocean-picker"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",
