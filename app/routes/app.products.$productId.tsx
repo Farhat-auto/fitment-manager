@@ -11,7 +11,7 @@ import {
   loadClassificationCategories,
 } from "../classification/classification.server";
 import { oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
-import { stableIdentity } from "../ocean/identity";
+import { emptyListing, stableIdentity } from "../ocean/identity";
 import { countMetafields, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
 import { appHref } from "../embedded-nav";
 
@@ -65,9 +65,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     mpn: article.mpn,
     barcode: article.barcode,
   });
-  const listing = resolved.ok
-    ? await oceanProductFitmentGet(resolved.identity)
-    : resolved;
+  let listing: Awaited<ReturnType<typeof oceanProductFitmentGet>> | typeof resolved = resolved;
+  if (resolved.ok) {
+    try {
+      listing = await oceanProductFitmentGet(resolved.identity);
+    } catch (error) {
+      console.warn("OCEAN_PRODUCT_FITMENT_FAILED", error);
+      listing = emptyListing(resolved.identity, { ok: false, error: "ocean_product_fitment_failed" });
+    }
+  }
   const shopDomain = shopDomainFrom(session, request);
   let categories: Array<{ value: string; label: string }> = [];
   try {

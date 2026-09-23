@@ -211,6 +211,8 @@ check("15. Settings presents Ocean Catalogue authority, not fitment.vehicles con
 check("16. /app/products/:productId vehicle discovery uses Ocean API only", () => {
   assert.match(productPage, /oceanProductFitmentGet/);
   assert.match(productPage, /oceanProductFitmentPost/);
+  assert.match(productPage, /OCEAN_PRODUCT_FITMENT_FAILED/);
+  assert.match(productPage, /try \{\s*listing = await oceanProductFitmentGet/);
   assert.match(picker, /fetch\("\/api\/ocean"/);
   assert.match(picker, /oceanGet\("\/makes\?has_vehicles=1/);
   assert.doesNotMatch(productPage, /getVehicleIndex/);
