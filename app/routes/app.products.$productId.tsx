@@ -69,6 +69,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         sku: "",
         barcode: "",
         mpn: "",
+        articleNumber: "",
+        oeReferences: [] as string[],
         variantId: "",
         numericId,
         variantNumericId: "",
@@ -146,7 +148,8 @@ export default function ProductCarFitment() {
 
   return (
     <Page
-      title="CAR FITMENT"
+      title={article.sku || article.numericId || "Product"}
+      subtitle="CAR FITMENT"
       backAction={{
         content: "Back to Products",
         onAction: () => navigate(appHref("/app/products", location.search || "")),
@@ -162,7 +165,7 @@ export default function ProductCarFitment() {
             />
             <BlockStack gap="100">
               <Text as="h2" variant="headingMd">
-                {article.vendor || "Catalogue article"} {article.sku}
+                {article.vendor || "Product"} {article.sku}
               </Text>
               <Text as="p" variant="bodySm" tone="subdued">
                 Display title is not an identity key: {article.title || "—"}

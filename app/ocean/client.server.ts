@@ -67,6 +67,13 @@ async function oceanFetch(method: "GET" | "POST", path: string, search = "", bod
       headers: oceanHeaders(),
       body: method === "POST" ? JSON.stringify(body || {}) : undefined,
     });
+    let host = "";
+    try {
+      host = new URL(href).host;
+    } catch {
+      host = "";
+    }
+    console.info("OCEAN_UPSTREAM", method, path, res.status, host);
     const payload = await readJson(res);
     if (!res.ok && payload && typeof payload === "object") {
       return { ...payload, ok: false, error: payload.error || `ocean_http_${res.status}` };

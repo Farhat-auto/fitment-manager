@@ -9,6 +9,7 @@ import {
   acceptListing,
   defaultVerification,
   emptyListing,
+  catalogueMappingRequired,
   isLegacyTestRow,
   listingBelongsTo,
   resetProductScreen,
@@ -182,6 +183,15 @@ check("OE family never copies fitment", () => {
   const bff = source("app/routes/api.ocean.$.ts");
   assert.match(bff, /oe-family/);
   assert.match(bff, /product-review/);
+});
+
+check("catalogue mapping required is not VERIFIED fitment", () => {
+  assert.equal(catalogueMappingRequired(emptyListing(identityA)), true);
+  assert.equal(catalogueMappingRequired({ unmapped: false, count: 1 }), false);
+  assert.equal(defaultVerification("add", VERIFIED, "manual"), VERIFIED);
+  const mappingSrc = source("app/ocean/identity.ts");
+  assert.match(mappingSrc, /Catalogue mapping required/);
+  assert.match(mappingSrc, /Never treat mapping evidence as VERIFIED/);
 });
 
 check("legacy writes are disabled", () => {

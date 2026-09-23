@@ -12,8 +12,12 @@ import {
   TextField,
 } from "@shopify/polaris";
 import {
+  MAPPING_REQUIRED_DETAIL,
+  MAPPING_REQUIRED_LABEL,
   UNVERIFIED,
   canonicalOceanVehicleId,
+  catalogueMappingRequired,
+  isOperationalOceanError,
   listingBelongsTo,
   resetProductScreen,
   storefrontLabel,
@@ -53,6 +57,7 @@ type Listing = {
   fitment_label?: string;
   zero_fitment?: boolean;
   unmapped?: boolean;
+  match?: string | null;
   sources?: Array<{ id: string; label: string }>;
   verification_statuses?: string[];
 };
@@ -66,6 +71,8 @@ type Article = {
   sku: string;
   barcode: string;
   mpn: string;
+  articleNumber?: string;
+  oeReferences?: string[];
   variantId: string;
   variantNumericId: string;
 };
@@ -83,6 +90,17 @@ function withVehicles<T extends { has_vehicles?: boolean; type_count?: number }>
     if (typeof row.type_count === "number" && row.type_count <= 0) return false;
     return true;
   });
+}
+
+function vehicleLabel(row: VehicleRow, fallback = "") {
+  return (
+    row.checkbox_label ||
+    row.customer_label ||
+    row.detail ||
+    row.title ||
+    `${row.make_name || ""} ${row.model_name || ""} ${row.engine || ""}`.trim() ||
+    fallback
+  );
 }
 
 async function shopifySessionHeaders(): Promise<Record<string, string>> {
@@ -207,6 +225,11 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
       const payload = await oceanPost({ ...identity, ...body });
       setBusy(false);
       if (!payload || payload.ok === false) {
+        if (catalogueMappingRequired(payload)) {
+          setListing((current) => ({ ...current, ...payload, unmapped: true, count: current.count || 0 }));
+          setError("");
+          return payload;
+        }
         setError(payload?.error || "Could not update car fitment.");
         return payload;
       }
@@ -222,6 +245,15 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   );
 
   const oceanVehicleId = (row: VehicleRow) => canonicalOceanVehicleId(row);
+
+  const toggleChecked = (key: string, val: boolean) => {
+    setChecked((current) => {
+      const next = { ...current };
+      if (val) next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  };
 
   const onMake = async (value: string) => {
     setMakeId(value);
@@ -277,15 +309,24 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   };
 
   const selectedEngines = React.useMemo(() => {
-    if (view === "bulk") return engines.filter((row) => checked[oceanVehicleId(row)]);
-    if (engineId) return engines.filter((row) => oceanVehicleId(row) === engineId);
-    return hits.filter((row) => checked[oceanVehicleId(row)]);
-  }, [view, engines, checked, engineId, hits]);
+    const fromHits = hits.filter((row) => checked[oceanVehicleId(row)]);
+    const fromEngines = engines.filter((row) => checked[oceanVehicleId(row)]);
+    const fromSelect = engineId ? engines.filter((row) => oceanVehicleId(row) === engineId) : [];
+    const merged = new Map<string, VehicleRow>();
+    for (const row of [...fromHits, ...fromEngines, ...fromSelect]) {
+      const key = oceanVehicleId(row);
+      if (key) merged.set(key, row);
+    }
+    return Array.from(merged.values());
+  }, [engines, checked, engineId, hits]);
 
   const addIds = selectedEngines.map((row) => oceanVehicleId(row)).filter(Boolean);
+  const mappingRequired = catalogueMappingRequired(listing);
+  const operationalError = isOperationalOceanError(error) ? error : "";
+  const oeReferences = (article.oeReferences || []).filter(Boolean);
 
   const addSelected = async () => {
-    if (!addIds.length) return;
+    if (!addIds.length || mappingRequired) return;
     const payload = await mutate({
       action: "add",
       vehicle_ids: addIds,
@@ -304,6 +345,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   };
 
   const importRows = async () => {
+    if (mappingRequired) return;
     const payload = await mutate({
       action: "import",
       content: importText,
@@ -333,6 +375,12 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     }
   };
 
+  const openPicker = (next: "add" | "bulk") => {
+    setChecked({});
+    setEngineId("");
+    setView(next);
+  };
+
   const fitments = listing.fitments || [];
   const count = listing.count || fitments.length;
   const sources = listing.sources || [{ id: "manual", label: "Manual" }];
@@ -351,23 +399,43 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
             </Badge>
           </InlineStack>
           <Text as="p" variant="bodyMd">
-            Catalogue article: Brand {article.vendor || "—"} · MPN {article.mpn || "—"} · SKU {article.sku || "—"}
+            Identity: Shopify product {article.numericId || "—"}
+            {article.variantNumericId ? ` · variant ${article.variantNumericId}` : ""}
+            {article.sku ? ` · SKU ${article.sku}` : ""}
+            {article.vendor ? ` · Brand ${article.vendor}` : ""}
+            {article.mpn ? ` · MPN ${article.mpn}` : ""}
           </Text>
           <Text as="p" variant="bodySm" tone="subdued">
-            Shopify product {article.numericId || "unmapped"}
-            {article.variantNumericId ? ` · variant ${article.variantNumericId}` : ""}
+            Structured fields: Brand {article.vendor || "—"} · MPN {article.mpn || "—"} · SKU{" "}
+            {article.sku || "—"}
+            {article.articleNumber ? ` · Article number ${article.articleNumber}` : " · Article number —"}
+            {oeReferences.length ? ` · OE ${oeReferences.join(", ")}` : " · OE —"}
           </Text>
-          {!count ? (
-            <Banner tone="warning">
-              No fitment assigned
+          <Text as="p" variant="bodySm" tone="subdued">
+            Title is display-only and is never used as identity.
+          </Text>
+          {mappingRequired ? (
+            <Banner tone="warning" title={MAPPING_REQUIRED_LABEL}>
+              <p>{MAPPING_REQUIRED_DETAIL}</p>
+              <p>
+                Mapping evidence on this product: SKU {article.sku || "—"}
+                {article.vendor ? ` · Brand ${article.vendor}` : ""}
+                {article.mpn ? ` · MPN ${article.mpn}` : " · MPN —"}
+                {article.articleNumber ? ` · Article number ${article.articleNumber}` : ""}
+                {oeReferences.length ? ` · OE ${oeReferences.join(", ")}` : ""}
+              </p>
+              <p>This does not create VERIFIED fitment.</p>
             </Banner>
+          ) : null}
+          {!count ? (
+            <Banner tone="warning">No fitment assigned</Banner>
           ) : null}
         </BlockStack>
       </Card>
 
-      {error ? (
+      {operationalError ? (
         <Banner tone="critical" title="CAR FITMENT">
-          {error}
+          {operationalError}
         </Banner>
       ) : null}
       {status ? (
@@ -380,10 +448,10 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
         <Card>
           <BlockStack gap="300">
             <InlineStack gap="200">
-              <Button variant="primary" onClick={() => setView("add")}>
+              <Button variant="primary" onClick={() => openPicker("add")}>
                 + Add vehicle
               </Button>
-              <Button onClick={() => setView("bulk")}>Bulk add</Button>
+              <Button onClick={() => openPicker("bulk")}>Bulk add</Button>
               <Button onClick={() => setView("import")}>Import fitment</Button>
               <Button onClick={() => setView("list")}>Manage</Button>
             </InlineStack>
@@ -434,32 +502,44 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
       {view === "add" || view === "bulk" ? (
         <Card>
           <BlockStack gap="300">
+            <Text as="h3" variant="headingSm">
+              Vehicle selection
+            </Text>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Search queries Ocean on the server. Browsing Make → Model
+              {skipGeneration ? "" : " → Generation"} → Motorization filters available vehicles.
+              Make and model never select motorisations automatically. Check a motorisation to select it.
+            </Text>
             <TextField
-              label="Search vehicles"
+              label="Search Ocean catalogue"
               value={search}
-              placeholder="E82 135i, N54B30A, 335i 2008"
+              placeholder="C-CLASS (W205), AMG C 43, engine code"
+              helpText="Server-side Ocean search. Results are not loaded into a Shopify vehicle cache."
               autoComplete="off"
               onChange={runSearch}
             />
-            {hits.map((row) => {
-              const key = oceanVehicleId(row);
-              if (!key) return null;
-              return (
-                <Checkbox
-                  key={key}
-                  label={row.checkbox_label || row.title || row.customer_label || key}
-                  checked={!!checked[key]}
-                  onChange={(val) =>
-                    setChecked((current) => {
-                      const next = { ...current };
-                      if (val) next[key] = true;
-                      else delete next[key];
-                      return next;
-                    })
-                  }
-                />
-              );
-            })}
+            {hits.length ? (
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm">
+                  Search results — check to select
+                </Text>
+                {hits.map((row) => {
+                  const key = oceanVehicleId(row);
+                  if (!key) return null;
+                  return (
+                    <Checkbox
+                      key={`search-${key}`}
+                      label={vehicleLabel(row, key)}
+                      checked={!!checked[key]}
+                      onChange={(val) => toggleChecked(key, val)}
+                    />
+                  );
+                })}
+              </BlockStack>
+            ) : null}
+            <Text as="p" variant="bodySm" tone="subdued">
+              Or browse by dropdown. Changing Make or Model only refreshes the motorisation list.
+            </Text>
             <Select
               label="Make"
               options={[{ label: "Select make", value: "" }, ...makes.map((row) => ({ label: row.name, value: row.id }))]}
@@ -495,6 +575,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               <Select
                 label="Motorization"
                 disabled={!modelId || (!skipGeneration && !generationId)}
+                helpText="Selecting a motorization from this list is the only way this dropdown selects a vehicle."
                 options={[
                   { label: "Select motorization", value: "" },
                   ...engines.map((row) => ({
@@ -506,25 +587,23 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
                 onChange={setEngineId}
               />
             ) : (
-              engines.map((row) => {
-                const key = oceanVehicleId(row);
-                if (!key) return null;
-                return (
-                  <Checkbox
-                    key={key}
-                    label={row.checkbox_label || row.detail || row.customer_label || key}
-                    checked={!!checked[key]}
-                    onChange={(val) =>
-                      setChecked((current) => {
-                        const next = { ...current };
-                        if (val) next[key] = true;
-                        else delete next[key];
-                        return next;
-                      })
-                    }
-                  />
-                );
-              })
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm">
+                  Motorization — filtered list, none selected until checked
+                </Text>
+                {engines.map((row) => {
+                  const key = oceanVehicleId(row);
+                  if (!key) return null;
+                  return (
+                    <Checkbox
+                      key={`engine-${key}`}
+                      label={vehicleLabel(row, key)}
+                      checked={!!checked[key]}
+                      onChange={(val) => toggleChecked(key, val)}
+                    />
+                  );
+                })}
+              </BlockStack>
             )}
             {engineId
               ? engines
@@ -537,6 +616,17 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
                     </Banner>
                   ))
               : null}
+            {selectedEngines.length ? (
+              <Banner tone="info" title="Selected vehicles">
+                {selectedEngines.map((row) => (
+                  <p key={oceanVehicleId(row)}>{vehicleLabel(row, oceanVehicleId(row))}</p>
+                ))}
+              </Banner>
+            ) : (
+              <Text as="p" variant="bodySm" tone="subdued">
+                No vehicles selected. Filtering Make/Model only lists motorisations.
+              </Text>
+            )}
             <Select
               label="Fitment source"
               options={sources.map((row) => ({ label: row.label, value: row.id }))}
@@ -553,11 +643,21 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
             <TextField label="Side" value={side} autoComplete="off" onChange={setSide} />
             <TextField label="Fitment note" value={note} autoComplete="off" onChange={setNote} />
             <InlineStack gap="200">
-              <Button variant="primary" loading={busy} disabled={!addIds.length} onClick={addSelected}>
+              <Button
+                variant="primary"
+                loading={busy}
+                disabled={!addIds.length || mappingRequired}
+                onClick={addSelected}
+              >
                 {view === "bulk" ? `Add ${addIds.length} vehicles` : "Add compatibility"}
               </Button>
               <Button onClick={() => setView("list")}>Cancel</Button>
             </InlineStack>
+            {mappingRequired ? (
+              <Text as="p" variant="bodySm" tone="subdued">
+                Save is disabled until this Shopify product is mapped to an Ocean catalogue article.
+              </Text>
+            ) : null}
           </BlockStack>
         </Card>
       ) : null}
@@ -589,7 +689,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               onChange={setVerification}
             />
             <InlineStack gap="200">
-              <Button variant="primary" loading={busy} disabled={!importText} onClick={importRows}>
+              <Button variant="primary" loading={busy} disabled={!importText || mappingRequired} onClick={importRows}>
                 Import fitment
               </Button>
               <Button onClick={() => setView("list")}>Cancel</Button>
@@ -623,7 +723,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
             <TextField label="Side" value={side} autoComplete="off" onChange={setSide} />
             <TextField label="Fitment note" value={note} autoComplete="off" onChange={setNote} />
             <InlineStack gap="200">
-              <Button variant="primary" loading={busy} onClick={saveEdit}>
+              <Button variant="primary" loading={busy} disabled={mappingRequired} onClick={saveEdit}>
                 Save
               </Button>
               <Button onClick={() => setView("list")}>Cancel</Button>

@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   canonicalOceanVehicleId,
+  catalogueMappingRequired,
+  emptyListing,
   isCanonicalOceanVehicleId,
   isRawOdooId,
   isShopifyMetaobjectGid,
@@ -398,6 +400,43 @@ check("25. canonical page has no vehicle-index chrome and does not hardcode BMW"
   assert.doesNotMatch(products, /ListMetaobjectsByType/);
   assert.doesNotMatch(productPage, /ListMetaobjectsByType/);
   assert.doesNotMatch(classificationServer, /ListMetaobjectsByType/);
+});
+
+check("26. catalogue mapping required is fail-closed and not raw unmapped", () => {
+  assert.match(picker, /MAPPING_REQUIRED_LABEL/);
+  assert.match(picker, /MAPPING_REQUIRED_DETAIL/);
+  assert.match(picker, /catalogueMappingRequired/);
+  assert.match(picker, /mappingRequired/);
+  assert.match(picker, /Make and model never select motorisations automatically/);
+  assert.match(picker, /Search Ocean catalogue/);
+  assert.match(picker, /filtered list, none selected until checked/);
+  assert.match(picker, /setChecked\(\{\}\)/);
+  assert.match(client, /OCEAN_UPSTREAM/);
+  const identitySrc = source("app/ocean/identity.ts");
+  assert.match(identitySrc, /Catalogue mapping required/);
+  assert.match(identitySrc, /not yet mapped to an Ocean catalogue article/);
+  assert.match(identitySrc, /Vehicle compatibility has not been confirmed/);
+  assert.doesNotMatch(picker, /article\.numericId \|\| "unmapped"/);
+  const listing = emptyListing({ sku: "HI-BRIT-HB-00294", shopify_product_id: "10639645671767" });
+  assert.equal(catalogueMappingRequired(listing), true);
+  assert.equal(catalogueMappingRequired({ unmapped: true, error: "unmapped", count: 0 }), true);
+  assert.equal(catalogueMappingRequired({ unmapped: true, error: "ocean_product_fitment_failed" }), false);
+  assert.equal(catalogueMappingRequired({ unmapped: false, count: 3 }), false);
+  const fromTitle = stableIdentity({ title: "Electric Water Pump M274 W205 2742000207" });
+  assert.equal(fromTitle.ok, false);
+});
+
+check("27. structured MPN/OE are displayed, title is never parsed into MPN", () => {
+  assert.match(identityQuery, /namespace: "custom", key: "mpn"/);
+  assert.match(identityQuery, /namespace: "custom", key: "article_number"/);
+  assert.match(identityQuery, /namespace: "custom", key: "oe_references"/);
+  assert.match(metafields, /articleNumber/);
+  assert.match(metafields, /oeReferences/);
+  assert.match(metafields, /parseListMetafield/);
+  assert.doesNotMatch(metafields, /node\.title.*mpn/);
+  assert.match(picker, /article\.mpn \|\| "—"/);
+  assert.match(picker, /Title is display-only/);
+  assert.doesNotMatch(picker, /2742000207/);
 });
 
 if (failed) {

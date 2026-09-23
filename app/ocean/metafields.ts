@@ -14,7 +14,11 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       fitmentStatus: metafield(namespace: "ocean", key: "fitment_status") { value }
       zeroFitment: metafield(namespace: "ocean", key: "zero_fitment") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
-      oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
+      articleNumber: metafield(namespace: "custom", key: "article_number") { value }
+      oeRefs: metafield(namespace: "custom", key: "oe_references") {
+        value
+        jsonValue
+      }
       category: metafield(namespace: "custom", key: "catalog_main_category") {
         value
         reference { ... on Metaobject { id displayName } }
@@ -80,6 +84,30 @@ export const PRODUCT_ID_BY_HANDLE_QUERY = `#graphql
   }
 `;
 
+function parseListMetafield(field: { jsonValue?: unknown; value?: unknown } | null | undefined): string[] {
+  const json = field?.jsonValue;
+  if (Array.isArray(json)) {
+    return json.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  const raw = field?.value;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function productFromAdminNode(node: any) {
   const variant = (((node || {}).variants || {}).nodes || [])[0] || {};
   return {
@@ -90,6 +118,8 @@ export function productFromAdminNode(node: any) {
     sku: String(variant.sku || ""),
     barcode: String(variant.barcode || ""),
     mpn: String((node && node.mpn && node.mpn.value) || ""),
+    articleNumber: String((node && node.articleNumber && node.articleNumber.value) || ""),
+    oeReferences: parseListMetafield(node && node.oeRefs),
     variantId: String(variant.id || ""),
     numericId: String((node && node.id) || "").split("/").pop() || "",
     variantNumericId: String(variant.id || "").split("/").pop() || "",

@@ -152,6 +152,22 @@ export function listingBelongsTo(
   return true;
 }
 
+export const MAPPING_REQUIRED_LABEL = "Catalogue mapping required";
+export const MAPPING_REQUIRED_DETAIL =
+  "This Shopify product is not yet mapped to an Ocean catalogue article. Vehicle compatibility has not been confirmed.";
+
+export function isOperationalOceanError(error: unknown) {
+  const code = text(error);
+  return Boolean(code) && code !== "unmapped";
+}
+
+/** Fail-closed catalogue mapping. Never treat mapping evidence as VERIFIED fitment. */
+export function catalogueMappingRequired(listing: Record<string, unknown> | null | undefined) {
+  const error = text(listing?.error);
+  if (isOperationalOceanError(error)) return false;
+  return listing?.unmapped === true || error === "unmapped";
+}
+
 export function emptyListing(identity: Partial<StableIdentity> = {}, extra: Record<string, unknown> = {}) {
   return {
     ok: true,
