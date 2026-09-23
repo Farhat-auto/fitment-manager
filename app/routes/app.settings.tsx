@@ -128,8 +128,9 @@ export default function SettingsPage() {
             </Text>
             <Text as="p" variant="bodySm" tone="subdued">
               Read-only leftovers: Shopify vehicle metaobjects and old compatibility metafields.
-              The isolated <code>/app/fitment/:handle</code> editor may still inspect them. The
-              normal <code>/app/products/:productId</code> workflow does not.
+              Leftover <code>/app/fitment/:handle</code> bookmarks redirect to{" "}
+              <code>/app/products/:productId</code>. The normal workflow does not read the
+              Shopify vehicle index.
             </Text>
           </BlockStack>
         </Card>

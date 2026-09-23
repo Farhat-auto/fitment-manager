@@ -422,7 +422,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
             <TextField
               label="Search vehicles"
               value={search}
-              placeholder="E82 135i, N54B30A, BMW 335i 2008"
+              placeholder="E82 135i, N54B30A, 335i 2008"
               autoComplete="off"
               onChange={runSearch}
             />

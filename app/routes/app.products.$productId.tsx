@@ -4,6 +4,12 @@ import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
 import { Banner, BlockStack, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
+import { ProductClassification } from "../components/ProductClassification";
+import {
+  classificationFromProductNode,
+  handleClassificationIntent,
+  loadClassificationCategories,
+} from "../classification/classification.server";
 import { oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { countMetafields, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
@@ -29,8 +35,15 @@ function toShopifyProductGid(rawProductId: string): { gid: string; numericId: st
   return { gid: `gid://shopify/Product/${raw}`, numericId: raw };
 }
 
+function shopDomainFrom(session: { shop?: string } | null | undefined, request: Request): string {
+  const fromSession = String(session?.shop ?? "").trim();
+  if (fromSession) return fromSession;
+  const url = new URL(request.url);
+  return String(url.searchParams.get("shop") || url.searchParams.get("shop_domain") || "").trim();
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const rawProductId = params.productId ?? "";
   const decodedProductId = normalizeProductId(rawProductId);
   const { gid, numericId } = toShopifyProductGid(decodedProductId);
@@ -55,15 +68,39 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const listing = resolved.ok
     ? await oceanProductFitmentGet(resolved.identity)
     : resolved;
+  const shopDomain = shopDomainFrom(session, request);
+  let categories: Array<{ value: string; label: string }> = [];
+  try {
+    const catalog = await loadClassificationCategories({ admin, shopDomain });
+    categories = catalog.categories;
+  } catch (error) {
+    console.warn("CLASSIFICATION_CATEGORIES_FAILED", error);
+  }
   return json({
     article,
     listing,
+    classification: classificationFromProductNode(node),
+    classificationOptions: { categories },
     ocean_endpoint: "/ocean-catalogue-manager/shopify-admin/product-fitment",
   });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  const contentType = String(request.headers.get("content-type") || "");
+  if (!contentType.includes("application/json")) {
+    const formData = await request.formData();
+    const intent = String(formData.get("_intent") || "").trim();
+    const classified = await handleClassificationIntent({
+      admin,
+      shopDomain: shopDomainFrom(session, request),
+      intent,
+      formData,
+    });
+    if (classified) return classified;
+    return json({ ok: false, error: "Unknown intent" }, { status: 400 });
+  }
+
   const { gid, numericId } = toShopifyProductGid(normalizeProductId(params.productId ?? ""));
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const payload = await oceanProductFitmentPost({
@@ -79,7 +116,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function ProductCarFitment() {
-  const { article, listing } = useLoaderData<typeof loader>();
+  const { article, listing, classification, classificationOptions } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const location = useLocation();
   const mapped = Boolean(article.numericId && (article.sku || article.vendor));
@@ -110,6 +147,11 @@ export default function ProductCarFitment() {
             </BlockStack>
           </InlineStack>
         </Card>
+        <ProductClassification
+          productGid={article.id}
+          classification={classification}
+          categories={classificationOptions.categories}
+        />
         {!mapped ? (
           <Banner tone="warning">
             No mapping. Fitment: 0 vehicles / unmapped. Resolve Shopify product ID, variant ID, SKU, or

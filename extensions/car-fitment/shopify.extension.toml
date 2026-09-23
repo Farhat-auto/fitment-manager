@@ -3,6 +3,7 @@ api_version = "2025-10"
 [[extensions]]
 name = "t:name"
 handle = "car-fitment"
+uid = "b1c539a2-8d08-74fa-bf03-76c6d58fa53990eb9e83"
 type = "ui_extension"
 
 [[extensions.targeting]]

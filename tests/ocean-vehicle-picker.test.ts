@@ -32,6 +32,8 @@ const picker = source("app/components/CarFitment.tsx");
 const productPage = source("app/routes/app.products.$productId.tsx");
 const products = source("app/routes/app.products.tsx");
 const legacy = source("app/routes/app.fitment.$productHandle.tsx");
+const classificationUi = source("app/components/ProductClassification.tsx");
+const classificationServer = source("app/classification/classification.server.ts");
 const api = source("app/routes/api.ocean.$.ts");
 const client = source("app/ocean/client.server.ts");
 const settings = source("app/routes/app.settings.tsx");
@@ -154,18 +156,31 @@ check("13. no legacy Shopify fitment writes on Ocean editor", () => {
   assert.equal(canonicalOceanVehicleId({ id: "gid://shopify/Metaobject/99" }), "");
 });
 
-check("14. classification remains unaffected", () => {
+check("14. classification remains on the canonical product page", () => {
   assert.match(products, /label="Category"/);
   assert.match(products, /label="System Group"/);
   assert.match(products, /label="Sub-category"/);
-  assert.match(legacy, /Product Classification/);
+  assert.match(productPage, /ProductClassification/);
+  assert.match(classificationUi, /Product Classification/);
+  assert.match(classificationUi, /label="Category"/);
+  assert.match(classificationUi, /label="System Group"/);
+  assert.match(classificationUi, /label="Sub-category"/);
+  assert.match(classificationServer, /catalog_main_category/);
+  assert.doesNotMatch(classificationServer, /getVehicleIndex/);
+  assert.doesNotMatch(classificationUi, /Vehicle index:/);
+  assert.doesNotMatch(classificationUi, /Refresh Vehicle Index/);
 });
 
-check("legacy /app/fitment/:handle remains but is not the normal workflow", () => {
-  assert.match(legacy, /Legacy Shopify vehicle-metaobject editor/);
-  assert.match(legacy, /loadFitmentRouteData/);
-  assert.match(legacy, /getVehicleIndex/);
-  assert.match(legacy, /Refresh Vehicle Index/);
+check("legacy /app/fitment/:handle is a redirect bridge, not a second UI", () => {
+  assert.match(legacy, /\/app\/products\/\$\{numericId\}/);
+  assert.match(legacy, /PRODUCT_ID_BY_HANDLE_QUERY/);
+  assert.match(legacy, /rejectLegacyVehicleWrite/);
+  assert.match(legacy, /is not the normal product/);
+  assert.doesNotMatch(legacy, /Refresh Vehicle Index/);
+  assert.doesNotMatch(legacy, /Vehicle index:/);
+  assert.doesNotMatch(legacy, /getVehicleIndex/);
+  assert.doesNotMatch(legacy, /Select a Make to load vehicles/);
+  assert.doesNotMatch(legacy, /loadFitmentRouteData/);
 });
 
 check("Ocean API proxy allows vehicle lookup without a dump", () => {
@@ -260,18 +275,17 @@ check("19. final vehicle identity is ovh-* not Shopify metaobject GIDs", () => {
   assert.match(picker, /canonicalOceanVehicleId/);
 });
 
-check("20. legacy /app/fitment/:handle cannot become authoritative accidentally", () => {
+check("20. leftover /app/fitment/:handle cannot become authoritative", () => {
   assert.match(products, /\/app\/products\/\$\{numericId\(p\.id\)\}/);
   assert.doesNotMatch(products, /\/app\/fitment\/\$\{/);
   assert.match(legacy, /rejectLegacyVehicleWrite/);
-  assert.match(legacy, /Legacy Shopify vehicle-metaobject editor/);
-  assert.match(legacy, /is not the normal/);
+  assert.match(legacy, /status: 409/);
+  assert.match(legacy, /\/app\/products\/\$\{numericId\}/);
   assert.match(source("app/ocean/legacy.ts"), /writesEnabled: false/);
   assert.match(fitmentBlock, /\/app\/products\/\$\{encodeURIComponent\(numericId\)\}/);
   assert.doesNotMatch(fitmentBlock, /\/app\/fitment\//);
   assert.doesNotMatch(fitmentBlock, /\/api\/fitment/);
   assert.doesNotMatch(fitmentBlock, /quickRemove/);
-  assert.match(legacy, /status: 409/);
 });
 
 check("21. Admin product block opens Ocean CAR FITMENT and does not load Shopify vehicles", () => {
@@ -311,6 +325,7 @@ check("23. normal navigation does not include Shopify vehicle import/export", ()
 
 check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", () => {
   const vehicleDb = [
+    /ListMetaobjectsByType/,
     /fitment\.vehicles/,
     /custom\.compatible_vehicles/,
     /getVehicleIndex/,
@@ -330,6 +345,8 @@ check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", 
     "app/routes/app.tsx",
     "app/routes/app.products.tsx",
     "app/routes/app.products.$productId.tsx",
+    "app/components/ProductClassification.tsx",
+    "app/classification/classification.server.ts",
     "app/routes/app.settings.tsx",
     "app/components/CarFitment.tsx",
     "app/ocean/metafields.ts",
@@ -354,6 +371,21 @@ check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", 
   assert.match(products, /label="Category"/);
   assert.match(products, /label="System Group"/);
   assert.match(products, /label="Sub-category"/);
+});
+
+check("25. canonical page has no vehicle-index chrome and does not hardcode BMW", () => {
+  assert.doesNotMatch(productPage, /Vehicle index:/);
+  assert.doesNotMatch(productPage, /1000 vehicles cached/);
+  assert.doesNotMatch(productPage, /Refresh Vehicle Index/);
+  assert.doesNotMatch(picker, /Vehicle index:/);
+  assert.doesNotMatch(picker, /Refresh Vehicle Index/);
+  assert.doesNotMatch(picker, /BMW/);
+  assert.doesNotMatch(productPage, /BMW/);
+  assert.match(picker, /oceanGet\("\/makes\?has_vehicles=1/);
+  assert.match(picker, /withVehicles/);
+  assert.doesNotMatch(products, /ListMetaobjectsByType/);
+  assert.doesNotMatch(productPage, /ListMetaobjectsByType/);
+  assert.doesNotMatch(classificationServer, /ListMetaobjectsByType/);
 });
 
 if (failed) {

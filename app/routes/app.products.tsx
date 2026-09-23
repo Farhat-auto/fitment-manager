@@ -20,8 +20,8 @@ import {
   Modal,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
-import { GET_PRODUCTS_FOR_FITMENT_ADMIN, LIST_METAOBJECTS_BY_TYPE } from "../graphql/fitment";
-import { paginateMetaobjects } from "../utils/paginateMetaobjects.server";
+import { GET_PRODUCTS_FOR_FITMENT_ADMIN } from "../graphql/fitment";
+import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server";
 import { normalizeOeReferenceLine, normalizeOeReferenceLinesFromForm, buildCustomSearchIndexValue } from "../utils/oeReferences";
 import {
   catalogSystemGroupIdFromSubcategoryNode,
@@ -217,32 +217,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let brandOptions: Option[] = [];
 
   if (includeMetaobjectOptions) {
-    const [allCategories, allSystemGroups, allSubcategories, allBrands] = await Promise.all([
-      paginateMetaobjects({
+    const shopDomain = String(session.shop || "").trim();
+    const [catListed, groupListed, subListed, brandListed] = await Promise.all([
+      listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "catalog_main_category" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain,
+        type: "catalog_main_category",
+        mode: "labels",
       }),
-      paginateMetaobjects({
+      listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "catalog_system_group" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain,
+        type: "catalog_system_group",
+        mode: "system_groups",
       }),
-      paginateMetaobjects({
+      listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "catalog_subcategory" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain,
+        type: "catalog_subcategory",
+        mode: "subcategories",
       }),
-      paginateMetaobjects({
+      listCatalogMetaobjectsCached({
         admin,
-        query: LIST_METAOBJECTS_BY_TYPE,
-        variables: { type: "brand" },
-        pathToConnection: (d) => d?.metaobjects,
+        shopDomain,
+        type: "brand",
+        mode: "labels",
       }),
     ]);
+    const allCategories = catListed.nodes;
+    const allSystemGroups = groupListed.nodes;
+    const allSubcategories = subListed.nodes;
+    const allBrands = brandListed.nodes;
 
     const toOption = (n: any): Option | null => {
       const id = typeof n?.id === "string" ? n.id.trim() : "";

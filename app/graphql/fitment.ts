@@ -8,8 +8,10 @@
  * The normal products list uses compact ocean.fitment_count only.
  *
  * LEGACY vehicle queries in this file: GET_PRODUCT_FITMENT, SEARCH_VEHICLES,
- * SET_FITMENT_VEHICLES, GET_PRODUCTS_WITH_FITMENT_COUNT, GET_PRODUCT_FOR_FITMENT_PAGE.
+ * SET_FITMENT_VEHICLES, GET_PRODUCTS_WITH_FITMENT_COUNT, GET_PRODUCT_FOR_FITMENT_PAGE,
+ * ListMetaobjectsByType (vehicle/index pagination).
  * Do not import those from /app/products or /app/products/:productId.
+ * Catalog classification on the normal path uses LIST_CATALOG_* / labels queries.
  */
 
 export const GET_PRODUCT_FITMENT = `#graphql
