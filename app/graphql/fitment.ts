@@ -6,6 +6,10 @@
  * below are LEGACY READ-ONLY for isolated rollback/audit routes.
  *
  * The normal products list uses compact ocean.fitment_count only.
+ *
+ * LEGACY vehicle queries in this file: GET_PRODUCT_FITMENT, SEARCH_VEHICLES,
+ * SET_FITMENT_VEHICLES, GET_PRODUCTS_WITH_FITMENT_COUNT, GET_PRODUCT_FOR_FITMENT_PAGE.
+ * Do not import those from /app/products or /app/products/:productId.
  */
 
 export const GET_PRODUCT_FITMENT = `#graphql

@@ -1,9 +1,9 @@
 /**
  * LEGACY Admin product block — pointer only.
  *
- * Do not read or write Shopify vehicle metafields/metaobjects here.
+ * Do not read or write Shopify vehicle catalogue data here.
  * Forward CAR FITMENT is /app/products/:productId (Ocean product_fitment → ocean_vehicle_id).
- * Historical fitment.vehicles data is retained in Shopify for rollback/audit only.
+ * Historical Shopify vehicle compatibility fields remain in the shop for rollback/audit only.
  */
 import React, { useMemo } from "react";
 import { BlockStack, InlineStack, Link, Text } from "@shopify/ui-extensions-react/admin";

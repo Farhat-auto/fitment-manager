@@ -1,7 +1,6 @@
 /**
- * Client-safe vehicle-index query helpers.
- * A cached index with count > 0 is built. Make/Model come from that cache only.
- * This is picker UX, not Ocean fitment authority.
+ * Client-safe helpers for the LEGACY Shopify vehicle-index cache.
+ * Used only by /app/fitment/:handle. Not Ocean fitment authority.
  */
 
 export type VehicleIndexRow = {

@@ -641,9 +641,11 @@ export default function ExportCsvPage() {
       }}
     >
       <BlockStack gap="400">
-        <Banner tone="info" title="CSV export">
+        <Banner tone="warning" title="LEGACY Shopify vehicle CSV export">
           <p>
-            This exports products and their linked vehicles from <code>fitment.vehicles</code>.
+            This page is isolated rollback/audit tooling. It can still read historical Shopify
+            vehicle links for reference. It is not Ocean catalogue authority and is not in the
+            normal Fitment Manager navigation.
           </p>
         </Banner>
 

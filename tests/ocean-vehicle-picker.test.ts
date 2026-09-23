@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -272,6 +272,88 @@ check("20. legacy /app/fitment/:handle cannot become authoritative accidentally"
   assert.doesNotMatch(fitmentBlock, /\/api\/fitment/);
   assert.doesNotMatch(fitmentBlock, /quickRemove/);
   assert.match(legacy, /status: 409/);
+});
+
+check("21. Admin product block opens Ocean CAR FITMENT and does not load Shopify vehicles", () => {
+  assert.match(fitmentBlock, /Ocean CAR FITMENT/);
+  assert.match(fitmentBlock, /\/app\/products\/\$\{encodeURIComponent\(numericId\)\}/);
+  assert.doesNotMatch(fitmentBlock, /admin\.graphql/);
+  assert.doesNotMatch(fitmentBlock, /metaobjects\(type: "vehicle"/);
+  assert.doesNotMatch(fitmentBlock, /namespace: "fitment"/);
+  assert.equal(existsSync(join(root, "extensions/fitment-block/dist/fitment-block.js")), false);
+});
+
+check("22. /api/fitment does not read Shopify vehicle metafields for display", () => {
+  const fitmentApi = source("app/routes/api.fitment.ts");
+  const removeApi = source("app/routes/api.fitment.remove.ts");
+  assert.doesNotMatch(fitmentApi, /admin\.graphql/);
+  assert.doesNotMatch(fitmentApi, /namespace: "fitment"/);
+  assert.doesNotMatch(fitmentApi, /compatible_vehicles/);
+  assert.match(fitmentApi, /\/app\/products\//);
+  assert.match(fitmentApi, /vehicles: \[\]/);
+  assert.match(removeApi, /rejectLegacyVehicleWrite/);
+  assert.doesNotMatch(removeApi, /admin\.graphql/);
+});
+
+check("23. normal navigation does not include Shopify vehicle import/export", () => {
+  const appShell = source("app/routes/app.tsx");
+  assert.match(appShell, /to="\/app\/products"/);
+  assert.match(appShell, /to="\/app\/images"/);
+  assert.match(appShell, /to="\/app\/settings"/);
+  assert.doesNotMatch(appShell, /to="\/app\/import"/);
+  assert.doesNotMatch(appShell, /to="\/app\/export"/);
+  assert.doesNotMatch(appShell, /to="\/app\/fitment/);
+  const home = source("app/routes/app._index.tsx");
+  assert.match(home, /LEGACY Shopify vehicle tools/);
+  assert.match(home, /to\("\/app\/import"\)/);
+  assert.match(home, /to\("\/app\/export"\)/);
+});
+
+check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", () => {
+  const vehicleDb = [
+    /fitment\.vehicles/,
+    /custom\.compatible_vehicles/,
+    /getVehicleIndex/,
+    /refreshVehicleIndex/,
+    /vehicle_index_cache/,
+    /vehicle_metaobject/,
+    /list\.metaobject_reference/,
+    /metaobjects\(type: "vehicle"/,
+    /namespace: "fitment", key: "vehicles"/,
+    /key: "compatible_vehicles"/,
+    /SET_FITMENT_VEHICLES/,
+    /SEARCH_VEHICLES/,
+    /GET_PRODUCT_FOR_FITMENT_PAGE/,
+    /from "\.\.\/vehicles\/vehicleIndex/,
+  ];
+  const normalPath = [
+    "app/routes/app.tsx",
+    "app/routes/app.products.tsx",
+    "app/routes/app.products.$productId.tsx",
+    "app/routes/app.settings.tsx",
+    "app/components/CarFitment.tsx",
+    "app/ocean/metafields.ts",
+    "app/ocean/client.server.ts",
+    "app/ocean/identity.ts",
+    "app/routes/api.ocean.$.ts",
+    "extensions/car-fitment/src/payload.js",
+    "extensions/car-fitment/src/FitmentApp.jsx",
+    "extensions/car-fitment/src/api.js",
+    "extensions/car-fitment/src/Block.jsx",
+    "extensions/car-fitment/src/Action.jsx",
+    "extensions/fitment-block/src/FitmentBlock.tsx",
+  ];
+  for (const rel of normalPath) {
+    const text = source(rel);
+    for (const pattern of vehicleDb) {
+      assert.doesNotMatch(text, pattern, `${rel} matched ${pattern}`);
+    }
+  }
+  assert.match(products, /key: "brand_reference"/);
+  assert.match(products, /type: "metaobject_reference"/);
+  assert.match(products, /label="Category"/);
+  assert.match(products, /label="System Group"/);
+  assert.match(products, /label="Sub-category"/);
 });
 
 if (failed) {
