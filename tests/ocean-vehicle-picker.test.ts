@@ -466,6 +466,7 @@ check("29. mapping candidates are evidence only and OE cannot auto-map", () => {
   assert.match(api, /"article-create"/);
   assert.doesNotMatch(mappingUi, /auto_mapped: true/);
   assert.match(mappingUi, /discovery_only/);
+  assert.match(mappingUi, /not_found/);
 });
 
 check("30. title cannot supply MPN on create preview", () => {
@@ -521,6 +522,7 @@ check("32. make\/model filtering causes zero selections and refresh clears check
   assert.match(picker, /setChecked\(\{\}\)/);
   assert.match(picker, /Choosing a make or model only filters the list/);
   assert.match(picker, /none selected until checked/);
+  assert.match(picker, /type_code \|\| row\.body_type/);
   assert.match(picker, /resetProductScreen/);
   assert.match(picker, /setChecked\(\{\}\)/);
   const reset = source("app/ocean/identity.ts");

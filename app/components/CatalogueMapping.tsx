@@ -149,12 +149,14 @@ export function CatalogueMappingCard({
         credentials: "include",
         headers: await shopifySessionHeaders(),
       });
-      const payload = await res.json();
-      setCandidates(payload.candidates || []);
+      const payload = await res.json().catch(() => ({}));
+      const rows = Array.isArray(payload.candidates) ? payload.candidates : [];
+      setCandidates(rows);
       setSearched(true);
-      if (!payload.candidates || !payload.candidates.length) setShowCreate(true);
-      if (payload.ok === false && payload.error && payload.error !== "unmapped") {
-        setError(String(payload.error));
+      if (!rows.length) setShowCreate(true);
+      const code = String(payload.error || "");
+      if (payload.ok === false && code && code !== "unmapped" && code !== "not_found") {
+        setError(code);
         setShowCreate(true);
       }
     } catch (err) {

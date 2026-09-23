@@ -42,6 +42,7 @@ type VehicleRow = {
   power_kw?: string | number;
   power_hp?: string | number;
   body_type?: string;
+  type_code?: string;
   checkbox_label?: string;
   customer_label?: string;
   source?: string;
@@ -132,7 +133,7 @@ function motorisationLine(row: VehicleRow) {
     row.engine_code,
     powerLabel(row),
     row.year_range,
-    row.generation_name,
+    row.type_code || row.body_type,
   ]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
