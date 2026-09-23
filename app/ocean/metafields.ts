@@ -1,3 +1,4 @@
+/** Product identity + compact Ocean status only. Do not fetch Shopify vehicle metafields. */
 export const PRODUCT_IDENTITY_QUERY = `#graphql
   query OceanCarFitmentProduct($id: ID!) {
     product(id: $id) {
@@ -10,10 +11,10 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       category { name }
       featuredImage { url }
       fitmentCount: metafield(namespace: "ocean", key: "fitment_count") { value }
+      fitmentStatus: metafield(namespace: "ocean", key: "fitment_status") { value }
+      zeroFitment: metafield(namespace: "ocean", key: "zero_fitment") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
       oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
-      legacyVehicles: metafield(namespace: "fitment", key: "vehicles") { value }
-      customVehicles: metafield(namespace: "custom", key: "compatible_vehicles") { value }
       variants(first: 20) {
         nodes { id sku barcode price inventoryQuantity }
       }

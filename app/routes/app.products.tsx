@@ -109,31 +109,11 @@ function parseBrandMetaobjectField(raw: unknown):
   return { kind: "invalid", detail: "Brand reference must be a Metaobject GID, numeric id, or blank." };
 }
 
-function parseFitmentGids(metafield: any): string[] {
-  const rawJson = metafield?.jsonValue;
-  if (Array.isArray(rawJson)) {
-    return rawJson.map((x) => String(x || "")).filter(Boolean);
-  }
-
-  const rawVal = metafield?.value;
-  if (Array.isArray(rawVal)) {
-    return rawVal.map((x: any) => String(x || "")).filter(Boolean);
-  }
-
-  const s = typeof rawVal === "string" ? rawVal.trim() : "";
-  if (!s) return [];
-
-  // Shopify commonly stores list.metaobject_reference as a JSON string array in `value`.
-  if (s.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed)) return parsed.map((x) => String(x || "")).filter(Boolean);
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
+/** Compact Ocean commerce cache — not Shopify vehicle GIDs. */
+function parseOceanFitmentCount(metafield: any): number {
+  const n = Number(metafield?.value ?? metafield?.jsonValue);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.trunc(n);
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -190,7 +170,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const article_number = String(p?.article_number?.value ?? "").trim();
     const brand = String(p?.brand?.value ?? "").trim();
     const vendor = String(p?.vendor ?? "").trim();
-    const vehicleCount = parseFitmentGids(p?.fitment).length;
+    const vehicleCount = parseOceanFitmentCount(p?.oceanFitmentCount);
     const oe_references = parseStringListMetafield(p?.oe_references)
       .map((line) => normalizeOeReferenceLine(line))
       .filter(Boolean);

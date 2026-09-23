@@ -34,6 +34,14 @@ const products = source("app/routes/app.products.tsx");
 const legacy = source("app/routes/app.fitment.$productHandle.tsx");
 const api = source("app/routes/api.ocean.$.ts");
 const client = source("app/ocean/client.server.ts");
+const settings = source("app/routes/app.settings.tsx");
+const metafields = source("app/ocean/metafields.ts");
+const graphql = source("app/graphql/fitment.ts");
+const payload = source("extensions/car-fitment/src/payload.js");
+const extensionApp = source("extensions/car-fitment/src/FitmentApp.jsx");
+const fitmentBlock = source("extensions/fitment-block/src/FitmentBlock.tsx");
+const adminListQuery = graphql.split("export const GET_PRODUCTS_FOR_FITMENT_ADMIN")[1]?.split("export const")[0] || "";
+const identityQuery = metafields.split("export const PRODUCT_IDENTITY_QUERY")[1]?.split("export const")[0] || "";
 
 check("1. Products Manage Fitment opens /app/products/:productId", () => {
   assert.match(products, /\/app\/products\/\$\{numericId\(p\.id\)\}/);
@@ -168,6 +176,102 @@ check("Ocean API proxy allows vehicle lookup without a dump", () => {
   assert.match(api, /"engines"/);
   assert.doesNotMatch(picker, /isShopifyThrottled/);
   assert.doesNotMatch(productPage, /paginateMetaobjects/);
+});
+
+check("15. Settings presents Ocean Catalogue authority, not fitment.vehicles config", () => {
+  assert.match(settings, /Ocean Catalogue \/ PostgreSQL/);
+  assert.match(settings, /ocean_vehicle_id/);
+  assert.match(settings, /product_fitment/);
+  assert.match(settings, /Ocean Catalogue API/);
+  assert.match(settings, /Commerce \+ compact fitment status only/);
+  assert.match(settings, /oceanConfigured/);
+  assert.match(settings, /NOT active authority/);
+  assert.doesNotMatch(settings, /list\.metaobject_reference/);
+  assert.doesNotMatch(settings, /Namespace:\s*<code>fitment<\/code>/);
+  assert.doesNotMatch(settings, /Key:\s*<code>vehicles<\/code>/);
+  assert.doesNotMatch(settings, /getVehicleIndex/);
+  assert.doesNotMatch(settings, /refreshVehicleIndex/);
+});
+
+check("16. /app/products/:productId vehicle discovery uses Ocean API only", () => {
+  assert.match(productPage, /oceanProductFitmentGet/);
+  assert.match(productPage, /oceanProductFitmentPost/);
+  assert.match(picker, /fetch\("\/api\/ocean"/);
+  assert.match(picker, /oceanGet\("\/makes\?has_vehicles=1/);
+  assert.doesNotMatch(productPage, /getVehicleIndex/);
+  assert.doesNotMatch(productPage, /refreshVehicleIndex/);
+  assert.doesNotMatch(productPage, /vehicleIndex/);
+  assert.doesNotMatch(productPage, /vehicle_index_cache/);
+  assert.doesNotMatch(productPage, /from "\.\.\/vehicles\//);
+  assert.doesNotMatch(picker, /from "\.\.\/vehicles\//);
+  assert.doesNotMatch(identityQuery, /namespace: "fitment", key: "vehicles"/);
+  assert.doesNotMatch(identityQuery, /compatible_vehicles/);
+  assert.doesNotMatch(identityQuery, /legacyVehicles/);
+  assert.match(identityQuery, /namespace: "ocean", key: "fitment_count"/);
+});
+
+check("17. no Shopify vehicle index or vehicle metaobject catalogue pagination on normal path", () => {
+  assert.doesNotMatch(productPage, /paginateMetaobjects/);
+  assert.doesNotMatch(productPage, /type: "vehicle"/);
+  assert.doesNotMatch(picker, /metaobjects\(type: "vehicle"/);
+  assert.doesNotMatch(picker, /paginateMetaobjects/);
+  assert.doesNotMatch(settings, /paginateMetaobjects/);
+  assert.doesNotMatch(products, /type: "vehicle"/);
+  assert.match(products, /type: "catalog_main_category"/);
+  assert.match(products, /type: "catalog_system_group"/);
+  assert.match(products, /type: "catalog_subcategory"/);
+  assert.match(adminListQuery, /namespace: "ocean", key: "fitment_count"/);
+  assert.doesNotMatch(adminListQuery, /namespace: "fitment", key: "vehicles"/);
+  assert.doesNotMatch(adminListQuery, /compatible_vehicles/);
+  assert.match(products, /parseOceanFitmentCount/);
+  assert.doesNotMatch(products, /parseFitmentGids/);
+});
+
+check("18. saving Ocean compatibility does not write Shopify vehicle metafields", () => {
+  assert.match(productPage, /countMetafields/);
+  assert.match(metafields, /namespace: "ocean"/);
+  assert.match(metafields, /key: "fitment_count"/);
+  assert.match(metafields, /key: "fitment_status"/);
+  assert.match(metafields, /key: "zero_fitment"/);
+  assert.doesNotMatch(productPage, /SET_FITMENT_VEHICLES/);
+  assert.doesNotMatch(productPage, /namespace: "fitment"/);
+  assert.doesNotMatch(productPage, /compatible_vehicles/);
+  assert.doesNotMatch(picker, /SET_FITMENT_VEHICLES/);
+  assert.doesNotMatch(picker, /fitment\.vehicles/);
+  assert.doesNotMatch(payload, /namespace: "fitment"/);
+  assert.doesNotMatch(payload, /compatible_vehicles/);
+  assert.doesNotMatch(payload, /legacyVehicles/);
+  assert.doesNotMatch(extensionApp, /legacyVehicles/);
+  assert.doesNotMatch(extensionApp, /customVehicles/);
+  assert.doesNotMatch(extensionApp, /legacy_fitment/);
+  assert.match(extensionApp, /countMetafields\(product\.id, count\)/);
+});
+
+check("19. final vehicle identity is ovh-* not Shopify metaobject GIDs", () => {
+  const id = canonicalOceanVehicleId({
+    ocean_vehicle_id: "ovh-8ff6795d995621d47b0f",
+    id: "gid://shopify/Metaobject/99",
+  });
+  assert.equal(id, "ovh-8ff6795d995621d47b0f");
+  assert.equal(isCanonicalOceanVehicleId("ovh-8ff6795d995621d47b0f"), true);
+  assert.equal(isShopifyMetaobjectGid("gid://shopify/Metaobject/99"), true);
+  assert.equal(canonicalOceanVehicleId({ id: "gid://shopify/Metaobject/99" }), "");
+  assert.match(picker, /ocean_vehicle_ids: addIds/);
+  assert.match(picker, /canonicalOceanVehicleId/);
+});
+
+check("20. legacy /app/fitment/:handle cannot become authoritative accidentally", () => {
+  assert.match(products, /\/app\/products\/\$\{numericId\(p\.id\)\}/);
+  assert.doesNotMatch(products, /\/app\/fitment\/\$\{/);
+  assert.match(legacy, /rejectLegacyVehicleWrite/);
+  assert.match(legacy, /Legacy Shopify vehicle-metaobject editor/);
+  assert.match(legacy, /is not the normal/);
+  assert.match(source("app/ocean/legacy.ts"), /writesEnabled: false/);
+  assert.match(fitmentBlock, /\/app\/products\/\$\{encodeURIComponent\(numericId\)\}/);
+  assert.doesNotMatch(fitmentBlock, /\/app\/fitment\//);
+  assert.doesNotMatch(fitmentBlock, /\/api\/fitment/);
+  assert.doesNotMatch(fitmentBlock, /quickRemove/);
+  assert.match(legacy, /status: 409/);
 });
 
 if (failed) {
