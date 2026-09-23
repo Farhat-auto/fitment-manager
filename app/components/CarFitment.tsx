@@ -21,7 +21,9 @@ import {
   listingBelongsTo,
   resetProductScreen,
   storefrontLabel,
+  vehicleFitmentEnabled,
 } from "../ocean/identity";
+import { CatalogueMappingCard } from "./CatalogueMapping";
 
 type VehicleRow = {
   id?: string;
@@ -57,9 +59,24 @@ type Listing = {
   fitment_label?: string;
   zero_fitment?: boolean;
   unmapped?: boolean;
+  catalogue_mapped?: boolean;
   match?: string | null;
   sources?: Array<{ id: string; label: string }>;
   verification_statuses?: string[];
+  article?: {
+    ocean_article_id?: string;
+    sku?: string;
+    brand?: string;
+    mpn?: string;
+    article_number?: string;
+    name?: string;
+  };
+  mapping?: {
+    ocean_article_id?: string;
+    mapping_method?: string;
+    mapped_at?: string;
+    mapped_by?: string;
+  };
 };
 
 type Article = {
@@ -137,7 +154,21 @@ async function oceanPost(body: Record<string, unknown>) {
   return res.json();
 }
 
-export function CarFitmentPanel({ article, initialListing }: { article: Article; initialListing: Listing }) {
+type Classification = {
+  category?: { value?: string; label?: string };
+  systemGroup?: { value?: string; label?: string };
+  subcategory?: { value?: string; label?: string };
+};
+
+export function CarFitmentPanel({
+  article,
+  initialListing,
+  classification,
+}: {
+  article: Article;
+  initialListing: Listing;
+  classification?: Classification;
+}) {
   const [listing, setListing] = React.useState<Listing>(initialListing || { fitments: [], count: 0 });
   const [view, setView] = React.useState<"list" | "add" | "bulk" | "import" | "edit">("list");
   const [busy, setBusy] = React.useState(false);
@@ -322,6 +353,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
 
   const addIds = selectedEngines.map((row) => oceanVehicleId(row)).filter(Boolean);
   const mappingRequired = catalogueMappingRequired(listing);
+  const fitmentEnabled = vehicleFitmentEnabled(listing);
   const operationalError = isOperationalOceanError(error) ? error : "";
   const oeReferences = (article.oeReferences || []).filter(Boolean);
 
@@ -376,6 +408,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   };
 
   const openPicker = (next: "add" | "bulk") => {
+    if (!fitmentEnabled) return;
     setChecked({});
     setEngineId("");
     setView(next);
@@ -388,11 +421,23 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
 
   return (
     <BlockStack gap="400">
+      <CatalogueMappingCard
+        article={article}
+        listing={listing}
+        classification={classification}
+        identity={identity}
+        onMapped={(payload) => {
+          setListing(payload as Listing);
+          setStatus("Catalogue article mapped. Vehicle fitment can now be assigned.");
+          setView("list");
+        }}
+      />
+
       <Card>
         <BlockStack gap="200">
           <InlineStack align="space-between" blockAlign="center">
             <Text as="h2" variant="headingMd">
-              CAR FITMENT
+              Vehicle Fitment
             </Text>
             <Badge tone={count ? "success" : "warning"}>
               {listing.fitment_label || `Fitment: ${count} vehicles`}
@@ -414,21 +459,14 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
           <Text as="p" variant="bodySm" tone="subdued">
             Title is display-only and is never used as identity.
           </Text>
-          {mappingRequired ? (
-            <Banner tone="warning" title={MAPPING_REQUIRED_LABEL}>
-              <p>{MAPPING_REQUIRED_DETAIL}</p>
-              <p>
-                Mapping evidence on this product: SKU {article.sku || "—"}
-                {article.vendor ? ` · Brand ${article.vendor}` : ""}
-                {article.mpn ? ` · MPN ${article.mpn}` : " · MPN —"}
-                {article.articleNumber ? ` · Article number ${article.articleNumber}` : ""}
-                {oeReferences.length ? ` · OE ${oeReferences.join(", ")}` : ""}
-              </p>
-              <p>This does not create VERIFIED fitment.</p>
-            </Banner>
-          ) : null}
           {!count ? (
             <Banner tone="warning">No fitment assigned</Banner>
+          ) : null}
+          {!fitmentEnabled ? (
+            <Text as="p" variant="bodySm" tone="subdued">
+              Vehicle controls stay unavailable until this Shopify product is mapped to an Ocean
+              catalogue article. {MAPPING_REQUIRED_LABEL}. {MAPPING_REQUIRED_DETAIL}
+            </Text>
           ) : null}
         </BlockStack>
       </Card>
@@ -448,11 +486,15 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
         <Card>
           <BlockStack gap="300">
             <InlineStack gap="200">
-              <Button variant="primary" onClick={() => openPicker("add")}>
+              <Button variant="primary" disabled={!fitmentEnabled} onClick={() => openPicker("add")}>
                 + Add vehicle
               </Button>
-              <Button onClick={() => openPicker("bulk")}>Bulk add</Button>
-              <Button onClick={() => setView("import")}>Import fitment</Button>
+              <Button disabled={!fitmentEnabled} onClick={() => openPicker("bulk")}>
+                Bulk add
+              </Button>
+              <Button disabled={!fitmentEnabled} onClick={() => fitmentEnabled && setView("import")}>
+                Import fitment
+              </Button>
               <Button onClick={() => setView("list")}>Manage</Button>
             </InlineStack>
             {fitments.map((row) => {

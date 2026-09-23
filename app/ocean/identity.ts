@@ -147,25 +147,78 @@ export function listingBelongsTo(
   const gotSku = text(row.sku);
   const wantedId = numericId(identity.shopify_product_id);
   const gotId = numericId(row.shopify_product_id);
+  if (wantedId && gotId) return wantedId === gotId;
   if (wantedSku && gotSku && wantedSku.toLowerCase() !== gotSku.toLowerCase()) return false;
-  if (wantedId && gotId && wantedId !== gotId) return false;
   return true;
 }
 
 export const MAPPING_REQUIRED_LABEL = "Catalogue mapping required";
 export const MAPPING_REQUIRED_DETAIL =
   "This Shopify product is not yet mapped to an Ocean catalogue article. Vehicle compatibility has not been confirmed.";
+export const MAPPING_MAPPED_LABEL = "Catalogue article mapped";
+export const MAP_CATALOGUE_ARTICLE = "Map catalogue article";
+export const MAP_THIS_ARTICLE = "Map this article";
+export const CREATE_OCEAN_ARTICLE = "Create new Ocean article";
+export const DISCOVERY_EVIDENCE_LABEL = "DISCOVERY EVIDENCE";
 
 export function isOperationalOceanError(error: unknown) {
   const code = text(error);
-  return Boolean(code) && code !== "unmapped";
+  return Boolean(code) && code !== "unmapped" && code !== "confirmation_required";
 }
 
 /** Fail-closed catalogue mapping. Never treat mapping evidence as VERIFIED fitment. */
 export function catalogueMappingRequired(listing: Record<string, unknown> | null | undefined) {
   const error = text(listing?.error);
   if (isOperationalOceanError(error)) return false;
+  if (listing?.catalogue_mapped === true) return false;
   return listing?.unmapped === true || error === "unmapped";
+}
+
+export function vehicleFitmentEnabled(listing: Record<string, unknown> | null | undefined) {
+  return !catalogueMappingRequired(listing);
+}
+
+/** MPN only from the structured mpn field. Title/OE/article number never fill it. */
+export function structuredMpn(input: Record<string, unknown> | null | undefined): string {
+  const raw = stripTitle(input || {});
+  const product = raw.product && typeof raw.product === "object" ? (raw.product as Record<string, unknown>) : {};
+  return text(raw.mpn || product.mpn);
+}
+
+export function articleCreatePreview(
+  article: {
+    vendor?: string;
+    sku?: string;
+    articleNumber?: string;
+    mpn?: string;
+    oeReferences?: string[];
+    numericId?: string;
+    variantNumericId?: string;
+    title?: string;
+  },
+  classification?: {
+    category?: { label?: string };
+    systemGroup?: { label?: string };
+    subcategory?: { label?: string };
+  },
+) {
+  return {
+    brand: text(article.vendor),
+    sku: text(article.sku),
+    article_number: text(article.articleNumber),
+    mpn: text(article.mpn),
+    oe_references: (article.oeReferences || []).map((item) => text(item)).filter(Boolean),
+    classification: {
+      category: text(classification?.category?.label),
+      system_group: text(classification?.systemGroup?.label),
+      subcategory: text(classification?.subcategory?.label),
+    },
+    shopify_product_id: numericId(article.numericId),
+    shopify_variant_id: numericId(article.variantNumericId),
+    title_used: false,
+    mpn_from_title: false,
+    auto_mapped: false,
+  };
 }
 
 export function emptyListing(identity: Partial<StableIdentity> = {}, extra: Record<string, unknown> = {}) {
@@ -183,6 +236,10 @@ export function emptyListing(identity: Partial<StableIdentity> = {}, extra: Reco
     title_used: false,
     stale: false,
     master: "ocean_product_fitment",
+    catalogue_mapped: false,
+    catalogue_mapping_label: MAPPING_REQUIRED_LABEL,
+    vehicle_controls: false,
+    auto_mapped: false,
     sources: [
       { id: "manual", label: "Manual" },
       { id: "supplier", label: "Supplier" },
@@ -266,7 +323,7 @@ export function acceptListing(
     listing: {
       ...emptyListing(identity),
       ...listing,
-      unmapped: Number(listing.count || 0) === 0,
+      unmapped: listing.unmapped === true || listing.error === "unmapped",
       copied_fitment: false,
       title_used: false,
     },

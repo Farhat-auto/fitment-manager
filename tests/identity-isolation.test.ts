@@ -7,6 +7,7 @@ import {
   NEEDS_REVIEW,
   VERIFIED,
   acceptListing,
+  articleCreatePreview,
   defaultVerification,
   emptyListing,
   catalogueMappingRequired,
@@ -16,6 +17,8 @@ import {
   stableIdentity,
   storefrontLabel,
   stripTitle,
+  structuredMpn,
+  vehicleFitmentEnabled,
 } from "../app/ocean/identity.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -202,6 +205,60 @@ check("legacy writes are disabled", () => {
   const productPage = source("app/routes/app.products.$productId.tsx");
   assert.doesNotMatch(productPage, /from\("fitments"\)/);
   assert.match(productPage, /oceanProductFitmentGet/);
+});
+
+check("unmapped product cannot save fitment", () => {
+  const listing = emptyListing({ shopify_product_id: "10639645671767", sku: "HI-BRIT-HB-00294" });
+  assert.equal(catalogueMappingRequired(listing), true);
+  assert.equal(vehicleFitmentEnabled(listing), false);
+  const picker = source("app/components/CarFitment.tsx");
+  assert.match(picker, /mappingRequired/);
+  assert.match(picker, /if \(!addIds.length \|\| mappingRequired\) return;/);
+});
+
+check("mapping candidates are evidence only", () => {
+  const mappingUi = source("app/components/CatalogueMapping.tsx");
+  assert.match(mappingUi, /DISCOVERY EVIDENCE|DISCOVERY_EVIDENCE_LABEL/);
+  assert.match(mappingUi, /No candidate is mapped until you confirm/);
+  assert.doesNotMatch(mappingUi, /autoMap|auto-map/);
+});
+
+check("title cannot supply MPN", () => {
+  assert.equal(
+    structuredMpn({
+      title: "Electric Water Pump M274 W205 2742000207",
+      product: { title: "Electric Water Pump M274 W205 2742000207", mpn: "" },
+    }),
+    "",
+  );
+  const preview = articleCreatePreview({
+    vendor: "HI-BRIT",
+    sku: "HI-BRIT-HB-00294",
+    articleNumber: "HB-00294",
+    mpn: "",
+    title: "Electric Water Pump M274 W205 2742000207",
+    numericId: "10639645671767",
+    variantNumericId: "53087436898647",
+  });
+  assert.equal(preview.mpn, "");
+  assert.equal(preview.mpn_from_title, false);
+});
+
+check("explicit article mapping enables vehicle controls", () => {
+  assert.equal(vehicleFitmentEnabled({ unmapped: true }), false);
+  assert.equal(vehicleFitmentEnabled({ unmapped: false, catalogue_mapped: true }), true);
+  const mappingUi = source("app/components/CatalogueMapping.tsx");
+  assert.match(mappingUi, /MAP_THIS_ARTICLE/);
+  assert.match(mappingUi, /CREATE_OCEAN_ARTICLE/);
+});
+
+check("refresh clears unsaved selection", () => {
+  const screen = resetProductScreen("10639645671767");
+  assert.deepEqual(screen.checked, {});
+  assert.equal(screen.search, "");
+  const picker = source("app/components/CarFitment.tsx");
+  assert.match(picker, /setChecked\(\{\}\)/);
+  assert.match(picker, /reset\(\)/);
 });
 
 if (failed) {

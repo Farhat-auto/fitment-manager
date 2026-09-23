@@ -9,6 +9,9 @@ import {
   isCanonicalOceanVehicleId,
   isRawOdooId,
   isShopifyMetaobjectGid,
+  articleCreatePreview,
+  structuredMpn,
+  vehicleFitmentEnabled,
   stableIdentity,
   stripTitle,
 } from "../app/ocean/identity.ts";
@@ -31,6 +34,7 @@ function check(name: string, fn: () => void) {
 }
 
 const picker = source("app/components/CarFitment.tsx");
+const mappingUi = source("app/components/CatalogueMapping.tsx");
 const productPage = source("app/routes/app.products.$productId.tsx");
 const productsLayout = source("app/routes/app.products.tsx");
 const products = source("app/routes/app.products._index.tsx");
@@ -363,6 +367,7 @@ check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", 
     "app/classification/classification.server.ts",
     "app/routes/app.settings.tsx",
     "app/components/CarFitment.tsx",
+    "app/components/CatalogueMapping.tsx",
     "app/ocean/metafields.ts",
     "app/ocean/client.server.ts",
     "app/ocean/identity.ts",
@@ -437,6 +442,88 @@ check("27. structured MPN/OE are displayed, title is never parsed into MPN", () 
   assert.match(picker, /article\.mpn \|\| "—"/);
   assert.match(picker, /Title is display-only/);
   assert.doesNotMatch(picker, /2742000207/);
+});
+
+check("28. unmapped product cannot save fitment and vehicle controls stay disabled", () => {
+  const listing = emptyListing({ sku: "HI-BRIT-HB-00294", shopify_product_id: "10639645671767" });
+  assert.equal(catalogueMappingRequired(listing), true);
+  assert.equal(vehicleFitmentEnabled(listing), false);
+  assert.match(picker, /disabled=\{\!fitmentEnabled\}/);
+  assert.match(picker, /if \(!fitmentEnabled\) return;/);
+  assert.match(picker, /if \(!addIds.length \|\| mappingRequired\) return;/);
+  assert.match(picker, /if \(mappingRequired\) return;/);
+  assert.match(mappingUi, /MAP_CATALOGUE_ARTICLE/);
+  assert.match(source("app/ocean/identity.ts"), /Map catalogue article/);
+});
+
+check("29. mapping candidates are evidence only and OE cannot auto-map", () => {
+  assert.match(mappingUi, /DISCOVERY_EVIDENCE_LABEL/);
+  assert.match(mappingUi, /No candidate is mapped until you confirm/);
+  assert.match(mappingUi, /MAP_THIS_ARTICLE/);
+  assert.match(mappingUi, /confirm: true/);
+  assert.match(api, /"article-candidates"/);
+  assert.match(api, /"article-map"/);
+  assert.match(api, /"article-create"/);
+  assert.doesNotMatch(mappingUi, /auto_mapped: true/);
+  assert.match(mappingUi, /discovery_only/);
+});
+
+check("30. title cannot supply MPN on create preview", () => {
+  const preview = articleCreatePreview(
+    {
+      vendor: "HI-BRIT",
+      sku: "HI-BRIT-HB-00294",
+      articleNumber: "HB-00294",
+      mpn: "",
+      oeReferences: ["A 274 200 01 07", "274 200 02 07"],
+      numericId: "10639645671767",
+      variantNumericId: "53087436898647",
+      title: "Electric Water Pump M274 W205 2742000207",
+    },
+    {
+      category: { label: "Cooling System" },
+      systemGroup: { label: "Water Pumps" },
+      subcategory: { label: "Electric Water Pump" },
+    },
+  );
+  assert.equal(preview.mpn, "");
+  assert.equal(preview.mpn_from_title, false);
+  assert.equal(preview.title_used, false);
+  assert.equal(preview.brand, "HI-BRIT");
+  assert.equal(preview.article_number, "HB-00294");
+  assert.equal(
+    structuredMpn({
+      title: "Electric Water Pump M274 W205 2742000207",
+      mpn: "",
+      product: { title: "Electric Water Pump M274 W205 2742000207" },
+    }),
+    "",
+  );
+  assert.match(mappingUi, /Title is never used to fill this field/);
+  assert.match(mappingUi, /disabled/);
+});
+
+check("31. explicit article mapping enables vehicle controls", () => {
+  assert.equal(
+    vehicleFitmentEnabled({ unmapped: false, catalogue_mapped: true, count: 0 }),
+    true,
+  );
+  assert.match(mappingUi, /MAPPING_MAPPED_LABEL/);
+  assert.match(mappingUi, /Mapped to Ocean Article/);
+  assert.match(mappingUi, /CREATE_OCEAN_ARTICLE/);
+  assert.match(mappingUi, /Confirm create and map/);
+  assert.match(picker, /classification=\{classification\}/);
+  assert.match(productPage, /classification=\{classification\}/);
+});
+
+check("32. make\/model filtering causes zero selections and refresh clears checks", () => {
+  assert.match(picker, /setChecked\(\{\}\)/);
+  assert.match(picker, /Changing Make or Model only refreshes the motorisation list/);
+  assert.match(picker, /none selected until checked/);
+  assert.match(picker, /resetProductScreen/);
+  assert.match(picker, /setChecked\(\{\}\)/);
+  const reset = source("app/ocean/identity.ts");
+  assert.match(reset, /checked: \{\}/);
 });
 
 if (failed) {

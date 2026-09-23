@@ -184,7 +184,11 @@ export default function ProductCarFitment() {
             compatibility.
           </Banner>
         ) : null}
-        <CarFitmentPanel article={article} initialListing={listing as any} />
+        <CarFitmentPanel
+          article={article}
+          initialListing={listing as any}
+          classification={classification}
+        />
       </BlockStack>
     </Page>
   );
