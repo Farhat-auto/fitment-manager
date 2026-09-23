@@ -51,11 +51,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Invalid productId (expected numeric product ID)", { status: 404 });
   }
 
-  const resp = await admin.graphql(PRODUCT_IDENTITY_QUERY, { variables: { id: gid } });
-  const gql = await resp.json();
-  const node = gql?.data?.product;
-  if (!node) throw new Response("Product not found", { status: 404 });
-  const article = productFromAdminNode(node);
+  let node: any = null;
+  try {
+    const resp = await admin.graphql(PRODUCT_IDENTITY_QUERY, { variables: { id: gid } });
+    const gql = await resp.json();
+    node = gql?.data?.product ?? null;
+  } catch (error) {
+    console.warn("PRODUCT_IDENTITY_QUERY_FAILED", error);
+  }
+  const article = node
+    ? productFromAdminNode(node)
+    : {
+        id: gid,
+        title: "",
+        handle: "",
+        vendor: "",
+        sku: "",
+        barcode: "",
+        mpn: "",
+        variantId: "",
+        numericId,
+        variantNumericId: "",
+      };
   const resolved = stableIdentity({
     shopify_product_id: article.numericId,
     shopify_variant_id: article.variantNumericId,
@@ -154,18 +171,17 @@ export default function ProductCarFitment() {
           </InlineStack>
         </Card>
         <ProductClassification
-          productGid={article.id}
+          productGid={article.id || `gid://shopify/Product/${article.numericId}`}
           classification={classification}
-          categories={classificationOptions.categories}
+          categories={classificationOptions.categories || []}
         />
         {!mapped ? (
           <Banner tone="warning">
-            No mapping. Fitment: 0 vehicles / unmapped. Resolve Shopify product ID, variant ID, SKU, or
-            Brand+MPN before adding compatibility.
+            Shopify identity is incomplete. CAR FITMENT still loads. Add SKU or Brand+MPN before saving
+            compatibility.
           </Banner>
-        ) : (
-          <CarFitmentPanel article={article} initialListing={listing as any} />
-        )}
+        ) : null}
+        <CarFitmentPanel article={article} initialListing={listing as any} />
       </BlockStack>
     </Page>
   );

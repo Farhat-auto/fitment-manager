@@ -30,7 +30,8 @@ function check(name: string, fn: () => void) {
 
 const picker = source("app/components/CarFitment.tsx");
 const productPage = source("app/routes/app.products.$productId.tsx");
-const products = source("app/routes/app.products.tsx");
+const productsLayout = source("app/routes/app.products.tsx");
+const products = source("app/routes/app.products._index.tsx");
 const legacy = source("app/routes/app.fitment.$productHandle.tsx");
 const classificationUi = source("app/components/ProductClassification.tsx");
 const classificationServer = source("app/classification/classification.server.ts");
@@ -47,10 +48,18 @@ const identityQuery = metafields.split("export const PRODUCT_IDENTITY_QUERY")[1]
 
 check("1. Products Manage Fitment opens /app/products/:productId", () => {
   assert.match(products, /\/app\/products\/\$\{numericId\(p\.id\)\}/);
-  assert.match(products, />Manage Fitment</);
+  assert.match(products, /Manage Fitment/);
+  assert.match(products, /navigate\(appHref\(`\/app\/products\/\$\{numericId\(p\.id\)\}`/);
   assert.doesNotMatch(products, /\/app\/fitment\/\$\{encodeURIComponent\(p\.handle\)\}/);
   assert.match(productPage, /CarFitmentPanel/);
+  assert.match(productPage, /PRODUCT_IDENTITY_QUERY_FAILED/);
+  assert.match(picker, /No fitment assigned/);
+  assert.match(picker, /idToken/);
   assert.match(productPage, /oceanProductFitmentGet/);
+  assert.match(productsLayout, /<Outlet \/>/);
+  assert.doesNotMatch(productsLayout, /GET_PRODUCTS_FOR_FITMENT_ADMIN/);
+  assert.doesNotMatch(productsLayout, /authenticate/);
+  assert.doesNotMatch(productPage, /GET_PRODUCTS_FOR_FITMENT_ADMIN/);
 });
 
 check("2. makes uses has_vehicles=1", () => {
@@ -346,6 +355,7 @@ check("24. ACTIVE NORMAL PATH files have zero Shopify vehicle DB dependencies", 
   const normalPath = [
     "app/routes/app.tsx",
     "app/routes/app.products.tsx",
+    "app/routes/app.products._index.tsx",
     "app/routes/app.products.$productId.tsx",
     "app/components/ProductClassification.tsx",
     "app/classification/classification.server.ts",

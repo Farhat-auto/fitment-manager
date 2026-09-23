@@ -85,8 +85,23 @@ function withVehicles<T extends { has_vehicles?: boolean; type_count?: number }>
   });
 }
 
+async function shopifySessionHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { accept: "application/json" };
+  try {
+    const bridge = (globalThis as { shopify?: { idToken?: () => Promise<string> } }).shopify;
+    const token = bridge?.idToken ? await bridge.idToken() : "";
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } catch {
+    // App Bridge token is optional when the Remix session cookie is already present.
+  }
+  return headers;
+}
+
 async function oceanGet(path: string) {
-  const res = await fetch("/api/ocean" + path);
+  const res = await fetch("/api/ocean" + path, {
+    credentials: "include",
+    headers: await shopifySessionHeaders(),
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Ocean GET ${res.status} ${text}`.trim());
@@ -97,7 +112,8 @@ async function oceanGet(path: string) {
 async function oceanPost(body: Record<string, unknown>) {
   const res = await fetch("/api/ocean/product-fitment", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    credentials: "include",
+    headers: { "content-type": "application/json", ...(await shopifySessionHeaders()) },
     body: JSON.stringify(body),
   });
   return res.json();
@@ -343,8 +359,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
           </Text>
           {!count ? (
             <Banner tone="warning">
-              Fitment: 0 vehicles. Compatibility is UNKNOWN until staff add an explicit Ocean vehicle_id.
-              Title is never used as identity.
+              No fitment assigned
             </Banner>
           ) : null}
         </BlockStack>
