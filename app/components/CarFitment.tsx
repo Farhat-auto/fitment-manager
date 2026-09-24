@@ -193,6 +193,7 @@ export function CarFitmentPanel({
   const [basket, setBasket] = React.useState<Record<string, VehicleRow>>({});
   const [makes, setMakes] = React.useState<Array<{ id: string; name: string; has_vehicles?: boolean; type_count?: number }>>([]);
   const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; has_vehicles?: boolean; type_count?: number }>>([]);
+  const [modelQuery, setModelQuery] = React.useState("");
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
   const [engines, setEngines] = React.useState<VehicleRow[]>([]);
   const [makeId, setMakeId] = React.useState("");
@@ -247,6 +248,7 @@ export function CarFitmentPanel({
     setModelId("");
     setGenerationId("");
     setModels([]);
+    setModelQuery("");
     setGenerations([]);
     setEngines([]);
     setSkipGeneration(true);
@@ -314,12 +316,13 @@ export function CarFitmentPanel({
     setHits([]);
     setSearch("");
     if (!value) return;
-    const payload = await oceanGet("/models?" + qs({ make_id: value, has_vehicles: "1" }));
-    setModels(withVehicles(payload.models || []));
+    const payload = await oceanGet("/models?" + qs({ make_id: value }));
+    setModels(payload.models || []);
   };
 
   const onModel = async (value: string) => {
     setModelId(value);
+    setModelQuery("");
     setGenerationId("");
     setGenerations([]);
     setEngines([]);
@@ -382,7 +385,15 @@ export function CarFitmentPanel({
     return Array.from(merged.values());
   }, [engines, checked, hits]);
 
-  const basketRows = React.useMemo(() => Object.values(basket), [basket]);
+  const visibleModels = React.useMemo(() => {
+    const term = modelQuery.trim().toLowerCase();
+    if (!term) return models;
+    return models.filter((row) =>
+      [row.name, row.title, row.id].some((part) => String(part || "").toLowerCase().includes(term)),
+    );
+  }, [models, modelQuery]);
+
+    const basketRows = React.useMemo(() => Object.values(basket), [basket]);
   const addIds = basketRows.map((row) => oceanVehicleId(row)).filter(Boolean);
 
   const addCurrentSelection = () => {
@@ -568,12 +579,24 @@ export function CarFitmentPanel({
               value={makeId}
               onChange={onMake}
             />
+            <TextField
+              label="Find model"
+              value={modelQuery}
+              placeholder="Search model or chassis — e.g. W205, C205, GLC"
+              helpText={makeId ? `${models.length} models available for this make. Models without motorisation data remain visible.` : "Select a make first."}
+              autoComplete="off"
+              disabled={!makeId}
+              onChange={setModelQuery}
+            />
             <Select
               label="Model"
               disabled={!makeId}
               options={[
                 { label: "Select model", value: "" },
-                ...models.map((row) => ({ label: row.name || row.title || row.id, value: row.id })),
+                ...visibleModels.map((row) => ({
+                  label: `${row.name || row.title || row.id}${row.has_vehicles === false || row.type_count === 0 ? " — no motorisation data yet" : ""}`,
+                  value: row.id,
+                })),
               ]}
               value={modelId}
               onChange={onModel}
