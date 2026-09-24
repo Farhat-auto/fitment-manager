@@ -2,7 +2,7 @@
 
 client_id = "2235978ef56dbb720721a7988a9a2cde"
 name = "Fitment Manager"
-application_url = "https://fitment-manager.vercel.app"
+application_url = "https://fitment-manager-git-cursor-ocean-c-5196b0-farhat-autos-projects.vercel.app"
 embedded = true
 
 [build]
@@ -19,6 +19,8 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
+  "https://fitment-manager-git-cursor-ocean-c-5196b0-farhat-autos-projects.vercel.app/auth/callback",
+  "https://fitment-manager-git-cursor-ocean-c-5196b0-farhat-autos-projects.vercel.app/auth/shopify/callback",
   "https://fitment-manager.vercel.app/auth/callback",
   "https://fitment-manager.vercel.app/auth/shopify/callback"
 ]
@@ -27,3 +29,18 @@ redirect_urls = [
 url = "/api/fitment"
 prefix = "apps"
 subpath = "ocean-catalogue"
+
+[product.metafields.ocean.fitment_count]
+type = "number_integer"
+name = "Fitment"
+description = "Count of explicit catalogue vehicle links. Sync/status only — not compatibility authority."
+
+[product.metafields.ocean.fitment_status]
+type = "single_line_text_field"
+name = "Fitment status"
+description = "Human label such as Fitment: N vehicles. Sync only. Do not store vehicle lists here."
+
+[product.metafields.ocean.zero_fitment]
+type = "boolean"
+name = "Zero fitment"
+description = "True when this Shopify product has no explicit Ocean product_fitment rows. Sync only."
