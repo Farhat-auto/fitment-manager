@@ -118,6 +118,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } catch {
     body = {};
   }
+  const mutation = String(body.action || "").trim().toLowerCase();
+  if (mutation === "add" && body.explicit_confirmation !== "save_fitment") {
+    return cors(
+      json(
+        { ok: false, error: "explicit_confirmation_required", action: mutation },
+        { status: 409 },
+      ),
+    );
+  }
+  // Confirmation is a Fitment Manager safety gate only; never forward it to
+  // the catalogue service as fitment data.
+  if ("explicit_confirmation" in body) delete body.explicit_confirmation;
   const payload = await oceanProductFitmentPost(body);
   const status = payload && payload.ok === false && payload.error === "ambiguous_identity" ? 400 : 200;
   return cors(json(payload, { status }));
