@@ -188,7 +188,9 @@ export function CarFitmentPanel({
   const [error, setError] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [globalSearch, setGlobalSearch] = React.useState(false);
   const [hits, setHits] = React.useState<VehicleRow[]>([]);
+  const [basket, setBasket] = React.useState<Record<string, VehicleRow>>({});
   const [makes, setMakes] = React.useState<Array<{ id: string; name: string; has_vehicles?: boolean; type_count?: number }>>([]);
   const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; has_vehicles?: boolean; type_count?: number }>>([]);
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
@@ -233,6 +235,8 @@ export function CarFitmentPanel({
     setChecked({});
     setHits([]);
     setSearch("");
+    setGlobalSearch(false);
+    setBasket({});
     setEditing(null);
     setError("");
     setStatus("");
@@ -307,6 +311,8 @@ export function CarFitmentPanel({
     setEngines([]);
     setSkipGeneration(true);
     setChecked({});
+    setHits([]);
+    setSearch("");
     if (!value) return;
     const payload = await oceanGet("/models?" + qs({ make_id: value, has_vehicles: "1" }));
     setModels(withVehicles(payload.models || []));
@@ -318,6 +324,8 @@ export function CarFitmentPanel({
     setGenerations([]);
     setEngines([]);
     setChecked({});
+    setHits([]);
+    setSearch("");
     if (!value || !makeId) return;
     const gens = await oceanGet("/generations?" + qs({ make_id: makeId, model_id: value }));
     const skip = Boolean(gens.skip_generation) || !(gens.generations || []).length;
@@ -344,6 +352,21 @@ export function CarFitmentPanel({
       setHits([]);
       return;
     }
+    if (!globalSearch && modelId) {
+      const term = value.trim().toLowerCase();
+      setHits(
+        engines.filter((row) =>
+          [motorisationLine(row), row.engine_code, row.type_code, row.detail, row.customer_label]
+            .map((part) => String(part || "").toLowerCase())
+            .some((part) => part.includes(term)),
+        ),
+      );
+      return;
+    }
+    if (!globalSearch) {
+      setHits([]);
+      return;
+    }
     const payload = await oceanGet("/vehicle-search?q=" + encodeURIComponent(value));
     setHits((payload.results || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
@@ -359,7 +382,28 @@ export function CarFitmentPanel({
     return Array.from(merged.values());
   }, [engines, checked, hits]);
 
-  const addIds = selectedEngines.map((row) => oceanVehicleId(row)).filter(Boolean);
+  const basketRows = React.useMemo(() => Object.values(basket), [basket]);
+  const addIds = basketRows.map((row) => oceanVehicleId(row)).filter(Boolean);
+
+  const addCurrentSelection = () => {
+    setBasket((current) => {
+      const next = { ...current };
+      for (const row of selectedEngines) {
+        const key = oceanVehicleId(row);
+        if (key) next[key] = row;
+      }
+      return next;
+    });
+    setChecked({});
+  };
+
+  const removeFromBasket = (key: string) => {
+    setBasket((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
   const mappingRequired = catalogueMappingRequired(listing);
   const fitmentEnabled = vehicleFitmentEnabled(listing);
   const operationalError = isOperationalOceanError(error) ? error : "";
@@ -382,6 +426,7 @@ export function CarFitmentPanel({
     });
     if (payload && payload.ok !== false) {
       setChecked({});
+      setBasket({});
       setConfirmSave(false);
     }
   };
@@ -517,41 +562,6 @@ export function CarFitmentPanel({
               );
             })}
 
-            <TextField
-              label="Technical vehicle search"
-              value={search}
-              placeholder="Engine code, type/chassis, make or model — e.g. 274.920, 205.042"
-              helpText="Search directly by engine code or vehicle type. Search only filters candidates; it never selects or saves fitment."
-              autoComplete="off"
-              onChange={runSearch}
-            />
-            {search.trim().length >= 2 ? (
-              <Text as="p" variant="bodySm" tone="subdued">
-                {hits.length ? `${hits.length} matching motorisations — none selected until checked` : "No matching motorisations"}
-              </Text>
-            ) : null}
-            {hits.length ? (
-              <BlockStack gap="100">
-                {hits.length > 1 ? (
-                  <Button onClick={() => openBulkSelect(hits)}>
-                    {`Select all ${hits.length} matching motorisations`}
-                  </Button>
-                ) : null}
-                {hits.map((row) => {
-                  const key = oceanVehicleId(row);
-                  if (!key) return null;
-                  return (
-                    <Checkbox
-                      key={`search-${key}`}
-                      label={motorisationLine(row)}
-                      checked={!!checked[key]}
-                      onChange={(val) => toggleChecked(key, val)}
-                    />
-                  );
-                })}
-              </BlockStack>
-            ) : null}
-
             <Select
               label="Make"
               options={[{ label: "Select make", value: "" }, ...makes.map((row) => ({ label: row.name, value: row.id }))]}
@@ -584,48 +594,80 @@ export function CarFitmentPanel({
               />
             ) : null}
 
-            {engines.length ? (
+            <InlineStack gap="200" blockAlign="end">
+              <TextField
+                label={globalSearch ? "Global technical search" : "Search inside selected vehicle"}
+                value={search}
+                placeholder={globalSearch ? "Engine code, type/chassis, make or model" : "Engine or type code — e.g. 274.920"}
+                helpText={globalSearch ? "Searches the whole catalogue. Nothing is selected or saved automatically." : modelId ? "Filters only this selected vehicle/model." : "Select Make and Model first, or enable Global search."}
+                autoComplete="off"
+                onChange={runSearch}
+              />
+              <Checkbox
+                label="Global search"
+                checked={globalSearch}
+                onChange={(value) => { setGlobalSearch(value); setSearch(""); setHits([]); setChecked({}); }}
+              />
+            </InlineStack>
+
+            {search.trim().length >= 2 ? (
+              <Text as="p" variant="bodySm" tone="subdued">
+                {hits.length ? `${hits.length} matching motorisations in ${globalSearch ? "all vehicles" : "this vehicle"}` : "No matching motorisations"}
+              </Text>
+            ) : null}
+
+            {(search.trim().length >= 2 ? hits : engines).length ? (
               <BlockStack gap="100">
-                <Text as="p" variant="bodySm">
-                  Motorization — filtered list, none selected until checked
-                </Text>
-                {engines.map((row) => {
+                <InlineStack gap="200">
+                  <Button onClick={() => openBulkSelect(search.trim().length >= 2 ? hits : engines)}>
+                    {`Select all ${(search.trim().length >= 2 ? hits : engines).length} filtered`}
+                  </Button>
+                  <Button onClick={() => setChecked({})}>Deselect filtered</Button>
+                </InlineStack>
+                {(search.trim().length >= 2 ? hits : engines).map((row) => {
                   const key = oceanVehicleId(row);
                   if (!key) return null;
                   return (
                     <Checkbox
-                      key={`engine-${key}`}
+                      key={`vehicle-${key}`}
                       label={motorisationLine(row)}
                       checked={!!checked[key]}
                       onChange={(val) => toggleChecked(key, val)}
                     />
                   );
                 })}
-                {engines.length > 1 ? (
-                  <Button onClick={() => openBulkSelect(engines)}>
-                    {`Select all ${engines.length} motorisations`}
-                  </Button>
-                ) : null}
               </BlockStack>
             ) : null}
 
             {selectedEngines.length ? (
-              <Banner tone="info" title={`Selected vehicles (${selectedEngines.length})`}>
-                {selectedEngines.map((row) => {
-                  const key = oceanVehicleId(row);
-                  return (
-                    <InlineStack key={key} gap="200" blockAlign="center">
-                      <Text as="p" variant="bodySm">
-                        {motorisationLine(row)}
-                      </Text>
-                      <Button onClick={() => toggleChecked(key, false)}>Remove</Button>
-                    </InlineStack>
-                  );
-                })}
+              <InlineStack gap="200">
+                <Button variant="primary" onClick={addCurrentSelection}>
+                  {`Add ${selectedEngines.length} to selection`}
+                </Button>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Add these, then choose another vehicle/model. Nothing is saved yet.
+                </Text>
+              </InlineStack>
+            ) : null}
+
+            {basketRows.length ? (
+              <Banner tone="info" title={`Selected fitments — review before saving (${basketRows.length})`}>
+                <BlockStack gap="100">
+                  {basketRows.map((row) => {
+                    const key = oceanVehicleId(row);
+                    return (
+                      <InlineStack key={key} align="space-between" gap="200" blockAlign="center">
+                        <Text as="p" variant="bodySm">{motorisationLine(row)}</Text>
+                        <Button onClick={() => removeFromBasket(key)}>Remove</Button>
+                      </InlineStack>
+                    );
+                  })}
+                  <Button onClick={() => setBasket({})}>Clear selected fitments</Button>
+                </BlockStack>
               </Banner>
             ) : (
               <Text as="p" variant="bodySm" tone="subdued">
-                No vehicles selected. Choosing a make or model only filters the list.
+                No fitments staged. Select a vehicle/model, filter its engines, then Add to selection.
               </Text>
             )}
 
@@ -636,7 +678,7 @@ export function CarFitmentPanel({
                 disabled={!addIds.length || mappingRequired}
                 onClick={() => setConfirmSave(true)}
               >
-                Save Fitment
+                {`Save all fitments (${addIds.length})`}
               </Button>
             </InlineStack>
           </BlockStack>
@@ -761,7 +803,7 @@ export function CarFitmentPanel({
       >
         <Modal.Section>
           <Text as="p" variant="bodyMd">
-            {`You are assigning this product to ${addIds.length} vehicle motorisations.`}
+            {`You are assigning this product to ${addIds.length} staged vehicle motorisations from your selected fitments list.`}
           </Text>
           <Text as="p" variant="bodySm" tone="subdued">
             Compatibility is saved for review. It is not marked verified automatically.
