@@ -10,7 +10,7 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,write_products,read_metaobjects"
+scopes = "read_products,write_products,read_metaobjects,write_app_proxy"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
@@ -38,3 +38,7 @@ type = "boolean"
 name = "Zero fitment"
 description = "True when this Shopify product has no explicit Ocean product_fitment rows. Sync only."
 
+[app_proxy]
+url = "https://fitment-manager.vercel.app/ocean-catalogue"
+subpath = "ocean-catalogue"
+prefix = "apps"
