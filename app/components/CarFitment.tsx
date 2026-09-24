@@ -204,6 +204,7 @@ export function CarFitmentPanel({
   const [importText, setImportText] = React.useState("");
   const [confirmSave, setConfirmSave] = React.useState(false);
   const [confirmBulk, setConfirmBulk] = React.useState(false);
+  const [bulkRows, setBulkRows] = React.useState<VehicleRow[]>([]);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
 
@@ -247,6 +248,7 @@ export function CarFitmentPanel({
     setSkipGeneration(true);
     setConfirmSave(false);
     setConfirmBulk(false);
+    setBulkRows([]);
   }, [article.numericId, initialListing]);
 
   React.useEffect(() => {
@@ -397,14 +399,22 @@ export function CarFitmentPanel({
     }
   };
 
+  const openBulkSelect = (rows: VehicleRow[]) => {
+    setBulkRows(rows);
+    setConfirmBulk(true);
+  };
+
   const selectAllFiltered = () => {
-    const next: Record<string, boolean> = {};
-    for (const row of engines) {
-      const key = oceanVehicleId(row);
-      if (key) next[key] = true;
-    }
-    setChecked(next);
+    setChecked((current) => {
+      const next = { ...current };
+      for (const row of bulkRows) {
+        const key = oceanVehicleId(row);
+        if (key) next[key] = true;
+      }
+      return next;
+    });
     setConfirmBulk(false);
+    setBulkRows([]);
   };
 
   return (
@@ -522,6 +532,11 @@ export function CarFitmentPanel({
             ) : null}
             {hits.length ? (
               <BlockStack gap="100">
+                {hits.length > 1 ? (
+                  <Button onClick={() => openBulkSelect(hits)}>
+                    {`Select all ${hits.length} matching motorisations`}
+                  </Button>
+                ) : null}
                 {hits.map((row) => {
                   const key = oceanVehicleId(row);
                   if (!key) return null;
@@ -587,7 +602,7 @@ export function CarFitmentPanel({
                   );
                 })}
                 {engines.length > 1 ? (
-                  <Button onClick={() => setConfirmBulk(true)}>
+                  <Button onClick={() => openBulkSelect(engines)}>
                     {`Select all ${engines.length} motorisations`}
                   </Button>
                 ) : null}
@@ -756,17 +771,17 @@ export function CarFitmentPanel({
 
       <Modal
         open={confirmBulk}
-        onClose={() => setConfirmBulk(false)}
-        title="Select all motorisations"
+        onClose={() => { setConfirmBulk(false); setBulkRows([]); }}
+        title="Select all filtered motorisations"
         primaryAction={{
           content: "Select all",
           onAction: selectAllFiltered,
         }}
-        secondaryActions={[{ content: "Cancel", onAction: () => setConfirmBulk(false) }]}
+        secondaryActions={[{ content: "Cancel", onAction: () => { setConfirmBulk(false); setBulkRows([]); } }]}
       >
         <Modal.Section>
           <Text as="p" variant="bodyMd">
-            {`You are about to assign ${engines.length} motorisations.`}
+            {`You are about to select ${bulkRows.length} currently filtered motorisations.`}
           </Text>
           <Text as="p" variant="bodySm" tone="subdued">
             This only checks the boxes. Fitment is not saved until you confirm Save Fitment.
