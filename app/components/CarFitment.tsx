@@ -372,6 +372,7 @@ export function CarFitmentPanel({
     if (!addIds.length || mappingRequired) return;
     const payload = await mutate({
       action: "add",
+      explicit_confirmation: "save_fitment",
       vehicle_ids: addIds,
       ocean_vehicle_ids: addIds,
       source,
