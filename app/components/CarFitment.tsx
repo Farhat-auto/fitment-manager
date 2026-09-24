@@ -164,6 +164,35 @@ async function oceanGet(path: string) {
   return res.json();
 }
 
+async function oceanGetAll(path: string, collectionKey: string, pageSize = 250) {
+  const rows: any[] = [];
+  let offset = 0;
+  const seen = new Set<string>();
+  for (let page = 0; page < 100; page += 1) {
+    const separator = path.includes("?") ? "&" : "?";
+    const payload = await oceanGet(
+      path + separator + qs({ limit: String(pageSize), offset: String(offset) }),
+    );
+    const batch = Array.isArray(payload?.[collectionKey]) ? payload[collectionKey] : [];
+    for (const row of batch) {
+      const key = String(row?.id || row?.vehicle_id || row?.ocean_vehicle_id || JSON.stringify(row));
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push(row);
+      }
+    }
+    const total = Number(payload?.total || 0);
+    const count = Number(payload?.count ?? batch.length);
+    const hasNext =
+      payload?.has_next === true ||
+      (total > 0 && offset + count < total) ||
+      (total === 0 && batch.length === pageSize);
+    if (!hasNext || !batch.length) break;
+    offset += count || batch.length;
+  }
+  return rows;
+}
+
 async function oceanPost(body: Record<string, unknown>) {
   const res = await fetch("/api/ocean/product-fitment", {
     method: "POST",
@@ -259,8 +288,8 @@ export function CarFitmentPanel({
 
   React.useEffect(() => {
     reset();
-    oceanGet("/makes?has_vehicles=1")
-      .then((payload) => setMakes(withVehicles(payload.makes || [])))
+    oceanGetAll("/makes?has_vehicles=1", "makes")
+      .then((rows) => setMakes(withVehicles(rows)))
       .catch((err) => setError(String(err?.message || err)));
     // Isolation: changing Shopify product ID wipes listing/search/checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -316,8 +345,8 @@ export function CarFitmentPanel({
     setHits([]);
     setSearch("");
     if (!value) return;
-    const payload = await oceanGet("/models?" + qs({ make_id: value }));
-    setModels(payload.models || []);
+    const rows = await oceanGetAll("/models?" + qs({ make_id: value }), "models");
+    setModels(rows);
   };
 
   const onModel = async (value: string) => {
@@ -330,23 +359,30 @@ export function CarFitmentPanel({
     setHits([]);
     setSearch("");
     if (!value || !makeId) return;
-    const gens = await oceanGet("/generations?" + qs({ make_id: makeId, model_id: value }));
-    const skip = Boolean(gens.skip_generation) || !(gens.generations || []).length;
+    const generationRows = await oceanGetAll(
+      "/generations?" + qs({ make_id: makeId, model_id: value }),
+      "generations",
+    );
+    const skip = generationRows.length === 0;
     setSkipGeneration(skip);
-    setGenerations(gens.generations || []);
+    setGenerations(generationRows);
     if (!skip) return;
-    const payload = await oceanGet("/engines?" + qs({ make_id: makeId, model_id: value }));
-    setEngines((payload.engines || payload.types || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
+    const rows = await oceanGetAll(
+      "/engines?" + qs({ make_id: makeId, model_id: value }),
+      "engines",
+    );
+    setEngines(rows.filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const onGeneration = async (value: string) => {
     setGenerationId(value);
     setChecked({});
     if (!value || !makeId || !modelId) return;
-    const payload = await oceanGet(
+    const rows = await oceanGetAll(
       "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value }),
+      "engines",
     );
-    setEngines((payload.engines || payload.types || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
+    setEngines(rows.filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const runSearch = async (value: string) => {
@@ -370,8 +406,11 @@ export function CarFitmentPanel({
       setHits([]);
       return;
     }
-    const payload = await oceanGet("/vehicle-search?q=" + encodeURIComponent(value));
-    setHits((payload.results || []).filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
+    const rows = await oceanGetAll(
+      "/vehicle-search?q=" + encodeURIComponent(value),
+      "results",
+    );
+    setHits(rows.filter((row: VehicleRow) => Boolean(canonicalOceanVehicleId(row))));
   };
 
   const selectedEngines = React.useMemo(() => {
