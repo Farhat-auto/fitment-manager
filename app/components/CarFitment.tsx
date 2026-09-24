@@ -508,12 +508,18 @@ export function CarFitmentPanel({
             })}
 
             <TextField
-              label="Search"
+              label="Technical vehicle search"
               value={search}
-              placeholder="Search make, model, engine, chassis..."
+              placeholder="Engine code, type/chassis, make or model — e.g. 274.920, 205.042"
+              helpText="Search directly by engine code or vehicle type. Search only filters candidates; it never selects or saves fitment."
               autoComplete="off"
               onChange={runSearch}
             />
+            {search.trim().length >= 2 ? (
+              <Text as="p" variant="bodySm" tone="subdued">
+                {hits.length ? `${hits.length} matching motorisations — none selected until checked` : "No matching motorisations"}
+              </Text>
+            ) : null}
             {hits.length ? (
               <BlockStack gap="100">
                 {hits.map((row) => {
