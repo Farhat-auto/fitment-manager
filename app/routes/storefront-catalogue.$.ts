@@ -42,6 +42,12 @@ const ALLOWED_ORIGINS = new Set([
   "https://g5uxzq-gb.myshopify.com",
 ]);
 
+const CHANGING_CATALOGUE = new Set([
+  "systems", "assembly-groups", "product-groups", "categories", "products",
+  "product", "product-review", "product-fitment", "car-fitment", "fitments",
+  "storefront-compatibility", "catalogue-search", "oe-family", "oe",
+]);
+
 function routeName(params: Record<string, string | undefined>) {
   return String(params["*"] || "")
     .replace(/^\/+|\/+$/g, "")
@@ -56,7 +62,7 @@ function corsHeaders(request: Request, route: string) {
       : "https://www.oceancarparts.com",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Cache-Control": ["products", "systems", "assembly-groups", "product-groups", "categories", "product-fitment", "car-fitment", "fitments"].includes(route)
+    "Cache-Control": CHANGING_CATALOGUE.has(route)
       ? "no-store, max-age=0" : "public, max-age=60, stale-while-revalidate=300",
     Vary: "Origin",
     "X-Content-Type-Options": "nosniff",
