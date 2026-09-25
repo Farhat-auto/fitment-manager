@@ -47,7 +47,13 @@ function routeName(params: Record<string, string | undefined>) {
     .split("/")[0];
 }
 
-function corsHeaders(request: Request) {
+const CHANGING_CATALOGUE = new Set([
+  "systems", "assembly-groups", "product-groups", "categories", "products",
+  "product", "product-review", "product-fitment", "car-fitment", "fitments",
+  "storefront-compatibility", "catalogue-search", "oe-family", "oe",
+]);
+
+function corsHeaders(request: Request, route: string) {
   const origin = request.headers.get("Origin") || "";
   return {
     "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has(origin)
@@ -55,14 +61,17 @@ function corsHeaders(request: Request) {
       : "https://www.oceancarparts.com",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+    "Cache-Control": CHANGING_CATALOGUE.has(route)
+      ? "no-store, max-age=0"
+      : "public, max-age=60, stale-while-revalidate=300",
     Vary: "Origin",
     "X-Content-Type-Options": "nosniff",
   };
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const headers = corsHeaders(request);
+  const name = routeName(params as Record<string, string | undefined>);
+  const headers = corsHeaders(request, name);
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers });
   }
@@ -70,7 +79,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ ok: false, error: "method_not_allowed" }, { status: 405, headers });
   }
 
-  const name = routeName(params as Record<string, string | undefined>);
   if (!PUBLIC_GET.has(name)) {
     return json({ ok: false, error: "not_found", path: name }, { status: 404, headers });
   }
