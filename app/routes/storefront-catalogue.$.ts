@@ -92,5 +92,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json(await oceanProductFitmentGet(resolved.identity), { headers });
   }
 
+  if (name === "product") {
+    return json(await oceanGet("/product-review", upstream.toString()), { headers });
+  }
+
   return json(await oceanGet(`/${name}`, upstream.toString()), { headers });
 }
