@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import { unauthenticated } from "../shopify.server";
 import { referenceKey, referenceValues } from "../utils/referenceLookup";
 
 const ALLOWED_ORIGINS = new Set([
@@ -40,7 +41,6 @@ let cached: { shop: string; expires: number; products: ReferenceProduct[] } | nu
 let loading: Promise<ReferenceProduct[]> | null = null;
 
 async function scanProducts(shop: string): Promise<ReferenceProduct[]> {
-  const { unauthenticated } = await import("../shopify.server");
   const { admin } = await unauthenticated.admin(shop);
   const products: ReferenceProduct[] = [];
   let after: string | null = null;
@@ -99,7 +99,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ ok: false, error: "Invalid reference" }, { status: 400, headers });
   }
   try {
-    if (!process.env.SHOPIFY_APP_URL) process.env.SHOPIFY_APP_URL = url.origin;
     const products = (await productsForShop(shop)).filter((product) => {
       const references = kind === "oe" ? product.oe : product.cross;
       return references.some((value) => referenceKey(kind, value) === wanted);
