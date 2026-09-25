@@ -9,7 +9,7 @@ const sessionStorage = new SupabaseSessionStorage();
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",
   apiSecretKey: process.env.SHOPIFY_API_SECRET ?? "",
-  appUrl: process.env.SHOPIFY_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : ""),
+  appUrl: process.env.SHOPIFY_APP_URL ?? "",
   authPathPrefix: "/auth",
   scopes: (process.env.SCOPES ?? "")
     .split(",")
