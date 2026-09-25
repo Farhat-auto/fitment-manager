@@ -3,39 +3,12 @@ api_version = "2025-10"
 [[extensions]]
 name = "t:name"
 handle = "car-fitment"
+uid = "b1c539a2-8d08-74fa-bf03-76c6d58fa53990eb9e83"
 type = "ui_extension"
 
 [[extensions.targeting]]
 module = "./src/Block.jsx"
 target = "admin.product-details.block.render"
-
-[[extensions.targeting]]
-module = "./src/ShouldRender.js"
-target = "admin.product-details.block.should-render"
-
-[[extensions.targeting]]
-module = "./src/Action.jsx"
-target = "admin.product-details.action.render"
-
-[[extensions.targeting]]
-module = "./src/ShouldRender.js"
-target = "admin.product-details.action.should-render"
-
-[[extensions.targeting]]
-module = "./src/Action.jsx"
-target = "admin.product-index.selection-action.render"
-
-[[extensions.targeting]]
-module = "./src/ShouldRender.js"
-target = "admin.product-index.selection-action.should-render"
-
-[[extensions.targeting]]
-module = "./src/Action.jsx"
-target = "admin.product-index.action.render"
-
-[[extensions.targeting]]
-module = "./src/ShouldRender.js"
-target = "admin.product-index.action.should-render"
 
 [extensions.capabilities]
 api_access = true

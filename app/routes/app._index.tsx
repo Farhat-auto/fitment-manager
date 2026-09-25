@@ -14,8 +14,9 @@ export default function AppIndex() {
         <Banner title="Ocean is the fitment authority" tone="info">
           <p>
             This Remix app is the authenticated Shopify Admin frontend. Compatibility is stored as
-            Ocean catalogue article → <code>product_fitment</code> → Ocean <code>vehicle_id</code>.
-            Supabase is session infrastructure only. Legacy Shopify vehicle metafields are read-only.
+            Ocean catalogue article → <code>product_fitment</code> → Ocean <code>ocean_vehicle_id</code>.
+            Shopify is commerce only. Legacy Shopify vehicle tools are isolated below and are not
+            the normal workflow.
           </p>
         </Banner>
 
@@ -38,7 +39,8 @@ export default function AppIndex() {
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">LEGACY Shopify vehicle tools</Text>
             <Text as="p" variant="bodyMd">
-              Import/export against <code>fitment.vehicles</code> is retained but no longer writes new
+              Import/export against historical Shopify vehicle metafields is isolated here for
+              rollback/audit. Those tools are not in the normal navigation and do not write new
               compatibility. Use CAR FITMENT instead.
             </Text>
             <InlineStack>

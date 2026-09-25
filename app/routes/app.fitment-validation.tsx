@@ -113,8 +113,14 @@ export default function FitmentValidation() {
   const rows = safeArray<any>(data?.rows);
 
   return (
-    <Page title="Fitment validation (Phase 1)">
+    <Page title="LEGACY fitment validation (read-only audit)">
       <BlockStack gap="400">
+        <Banner tone="warning" title="Isolated rollback/audit">
+          <p>
+            This page compares historical Shopify vehicle metafields for audit. It is not Ocean
+            catalogue authority and is not the normal product workflow.
+          </p>
+        </Banner>
         <Card>
           <BlockStack gap="300">
             <Text as="p" variant="bodySm" tone="subdued">

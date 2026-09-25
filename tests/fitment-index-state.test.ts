@@ -91,15 +91,15 @@ check("Fitment loader ships makes/indexVehicles from cache and skips index_makes
   assert.match(load, /makes/);
   assert.match(load, /indexVehicles/);
   assert.match(load, /refresh: false/);
+  const isolatedQuery = source("app/vehicles/vehicleIndexQuery.ts");
+  assert.match(isolatedQuery, /vehicleIndexIsReady/);
+  assert.match(isolatedQuery, /listModelsFromRows/);
+  assert.match(isolatedQuery, /vehiclesForMakeModelFromRows/);
   const route = source("app/routes/app.fitment.$productHandle.tsx");
-  assert.match(route, /Do not POST index_makes when/);
-  assert.match(route, /vehicleIndexIsReady/);
-  assert.match(route, /listModelsFromRows/);
-  assert.match(route, /vehiclesForMakeModelFromRows/);
-  assert.doesNotMatch(
-    route,
-    /const indexReady = !!indexInfo\?\.count/,
-  );
+  assert.match(route, /LEGACY_VEHICLE_INTENTS/);
+  assert.match(route, /rejectLegacyVehicleWrite/);
+  assert.doesNotMatch(route, /getVehicleIndex/);
+  assert.match(route, /redirectToCanonicalProduct/);
 });
 
 check("empty cache is the only unbuilt state", () => {

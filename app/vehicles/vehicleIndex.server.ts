@@ -1,3 +1,10 @@
+/**
+ * LEGACY READ-ONLY Shopify vehicle metaobject index.
+ *
+ * Used only by the isolated /app/fitment/:handle rollback route.
+ * The normal /app/products/:productId editor must not import this module.
+ * Ocean Catalogue / PostgreSQL is the vehicle database.
+ */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {

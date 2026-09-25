@@ -7,14 +7,18 @@ import {
   NEEDS_REVIEW,
   VERIFIED,
   acceptListing,
+  articleCreatePreview,
   defaultVerification,
   emptyListing,
+  catalogueMappingRequired,
   isLegacyTestRow,
   listingBelongsTo,
   resetProductScreen,
   stableIdentity,
   storefrontLabel,
   stripTitle,
+  structuredMpn,
+  vehicleFitmentEnabled,
 } from "../app/ocean/identity.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -184,6 +188,15 @@ check("OE family never copies fitment", () => {
   assert.match(bff, /product-review/);
 });
 
+check("catalogue mapping required is not VERIFIED fitment", () => {
+  assert.equal(catalogueMappingRequired(emptyListing(identityA)), true);
+  assert.equal(catalogueMappingRequired({ unmapped: false, count: 1 }), false);
+  assert.equal(defaultVerification("add", VERIFIED, "manual"), VERIFIED);
+  const mappingSrc = source("app/ocean/identity.ts");
+  assert.match(mappingSrc, /No article mapped/);
+  assert.match(mappingSrc, /Never treat mapping evidence as VERIFIED/);
+});
+
 check("legacy writes are disabled", () => {
   const legacy = source("app/ocean/legacy.ts");
   assert.match(legacy, /writesEnabled: false/);
@@ -192,6 +205,60 @@ check("legacy writes are disabled", () => {
   const productPage = source("app/routes/app.products.$productId.tsx");
   assert.doesNotMatch(productPage, /from\("fitments"\)/);
   assert.match(productPage, /oceanProductFitmentGet/);
+});
+
+check("unmapped product cannot save fitment", () => {
+  const listing = emptyListing({ shopify_product_id: "10639645671767", sku: "HI-BRIT-HB-00294" });
+  assert.equal(catalogueMappingRequired(listing), true);
+  assert.equal(vehicleFitmentEnabled(listing), false);
+  const picker = source("app/components/CarFitment.tsx");
+  assert.match(picker, /mappingRequired/);
+  assert.match(picker, /if \(!addIds.length \|\| mappingRequired\) return;/);
+});
+
+check("mapping candidates are evidence only", () => {
+  const mappingUi = source("app/components/CatalogueMapping.tsx");
+  assert.match(mappingUi, /DISCOVERY EVIDENCE|DISCOVERY_EVIDENCE_LABEL|discovery only/);
+  assert.match(mappingUi, /Use this article|MAP_THIS_ARTICLE/);
+  assert.doesNotMatch(mappingUi, /autoMap|auto-map/);
+});
+
+check("title cannot supply MPN", () => {
+  assert.equal(
+    structuredMpn({
+      title: "Electric Water Pump M274 W205 2742000207",
+      product: { title: "Electric Water Pump M274 W205 2742000207", mpn: "" },
+    }),
+    "",
+  );
+  const preview = articleCreatePreview({
+    vendor: "HI-BRIT",
+    sku: "HI-BRIT-HB-00294",
+    articleNumber: "HB-00294",
+    mpn: "",
+    title: "Electric Water Pump M274 W205 2742000207",
+    numericId: "10639645671767",
+    variantNumericId: "53087436898647",
+  });
+  assert.equal(preview.mpn, "");
+  assert.equal(preview.mpn_from_title, false);
+});
+
+check("explicit article mapping enables vehicle controls", () => {
+  assert.equal(vehicleFitmentEnabled({ unmapped: true }), false);
+  assert.equal(vehicleFitmentEnabled({ unmapped: false, catalogue_mapped: true }), true);
+  const mappingUi = source("app/components/CatalogueMapping.tsx");
+  assert.match(mappingUi, /MAP_THIS_ARTICLE/);
+  assert.match(mappingUi, /CREATE_OCEAN_ARTICLE/);
+});
+
+check("refresh clears unsaved selection", () => {
+  const screen = resetProductScreen("10639645671767");
+  assert.deepEqual(screen.checked, {});
+  assert.equal(screen.search, "");
+  const picker = source("app/components/CarFitment.tsx");
+  assert.match(picker, /setChecked\(\{\}\)/);
+  assert.match(picker, /reset\(\)/);
 });
 
 if (failed) {
