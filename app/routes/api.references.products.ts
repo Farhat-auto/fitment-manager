@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { unauthenticated } from "../shopify.server";
-import { referenceKey, referenceValues } from "../utils/referenceLookup";
+import { matchesReference, referenceKey, referenceValues } from "../utils/referenceLookup";
 
 const ALLOWED_ORIGINS = new Set([
   "https://www.oceancarparts.com",
@@ -45,8 +45,8 @@ async function scanProducts(shop: string): Promise<ReferenceProduct[]> {
   const products: ReferenceProduct[] = [];
   let after: string | null = null;
   for (let page = 0; page < 40; page += 1) {
-    const response = await admin.graphql(PRODUCT_REFERENCES, { variables: { after } });
-    const body = await response.json();
+    const response: any = await admin.graphql(PRODUCT_REFERENCES, { variables: { after } });
+    const body: any = await response.json();
     if (!response.ok || body.errors?.length || !body.data?.products) {
       throw new Error("Shopify reference lookup failed");
     }
@@ -93,7 +93,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if ((kind !== "oe" && kind !== "cross") || raw.length < 3 || raw.length > 120) {
     return json({ ok: false, error: "Invalid reference" }, { status: 400, headers });
   }
-  const shop = process.env.SHOPIFY_STORE_DOMAIN || "g5uxzq-gb.myshopify.com";
+  const shop = process.env.STOREFRONT_SHOPIFY_DOMAIN || "g5uxzq-gb.myshopify.com";
   const wanted = referenceKey(kind, raw);
   if (wanted.length < 3) {
     return json({ ok: false, error: "Invalid reference" }, { status: 400, headers });
@@ -101,7 +101,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const products = (await productsForShop(shop)).filter((product) => {
       const references = kind === "oe" ? product.oe : product.cross;
-      return references.some((value) => referenceKey(kind, value) === wanted);
+      return references.some((value) => matchesReference(kind, value, wanted));
     }).map(({ id, handle, title, vendor, image }) => ({ id, handle, title, vendor, image }));
     return json({ ok: true, kind, reference: raw, products, count: products.length }, { headers });
   } catch (error) {
