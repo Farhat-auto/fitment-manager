@@ -5,11 +5,15 @@ import {
 import { SupabaseSessionStorage } from "./sessions/supabaseSessionStorage.server";
 
 const sessionStorage = new SupabaseSessionStorage();
+const previewAppUrl =
+  process.env.VERCEL_ENV === "preview" && process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",
   apiSecretKey: process.env.SHOPIFY_API_SECRET ?? "",
-  appUrl: process.env.SHOPIFY_APP_URL ?? "",
+  appUrl: process.env.SHOPIFY_APP_URL || previewAppUrl,
   authPathPrefix: "/auth",
   scopes: (process.env.SCOPES ?? "")
     .split(",")
