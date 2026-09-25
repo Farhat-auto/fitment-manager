@@ -1,3 +1,4 @@
+// Preview branch stays on the recorded catalogue proxy.
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
