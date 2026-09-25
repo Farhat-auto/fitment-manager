@@ -73,7 +73,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const url = new URL(request.url);
-  const upstream = new URLSearchParams(url.searchParams);
+  const upstream = new URLSearchParams();
+  url.searchParams.forEach((value, key) => upstream.append(key, value));
 
   if (name === "product-fitment" || name === "car-fitment" || name === "fitments") {
     const resolved = stableIdentity({
