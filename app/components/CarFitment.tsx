@@ -233,6 +233,7 @@ export function CarFitmentPanel({
   const [editing, setEditing] = React.useState<VehicleRow | null>(null);
   const [source, setSource] = React.useState("manual");
   const [verification, setVerification] = React.useState(UNVERIFIED);
+  const [confirmVerify, setConfirmVerify] = React.useState(false);
   const [importText, setImportText] = React.useState("");
   const [confirmSave, setConfirmSave] = React.useState(false);
   const [confirmBulk, setConfirmBulk] = React.useState(false);
@@ -273,6 +274,7 @@ export function CarFitmentPanel({
     setImportText("");
     setSource("manual");
     setVerification(UNVERIFIED);
+    setConfirmVerify(false);
     setMakeId("");
     setModelId("");
     setGenerationId("");
@@ -813,6 +815,10 @@ export function CarFitmentPanel({
                 variant="primary"
                 loading={busy}
                 onClick={async () => {
+                  if (verification === "VERIFIED") {
+                    setConfirmVerify(true);
+                    return;
+                  }
                   await mutate({
                     action: "update",
                     fitment_id: editing.id,
@@ -851,6 +857,41 @@ export function CarFitmentPanel({
           </Collapsible>
         </BlockStack>
       </Card>
+
+      <Modal
+        open={confirmVerify}
+        onClose={() => setConfirmVerify(false)}
+        title="Publish verified compatibility"
+        primaryAction={{
+          content: "Verify and publish fitment",
+          destructive: false,
+          onAction: async () => {
+            if (!editing) return;
+            await mutate({
+              action: "update",
+              fitment_id: editing.id,
+              source,
+              verification_status: "VERIFIED",
+              explicit_confirmation: "verify_public_fitment",
+            });
+            setConfirmVerify(false);
+            setEditing(null);
+          },
+          loading: busy,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setConfirmVerify(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="200">
+            <Text as="p" variant="bodyMd">
+              Confirm only when this exact catalogue motorisation is proven compatible with this article.
+            </Text>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Verification publishes this application to the storefront as a FITS relationship. OE overlap or product title alone is not evidence.
+            </Text>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={confirmSave}
