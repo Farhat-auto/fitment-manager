@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
-import { canonicalVehicleKey } from "../ocean/vehicleAliases";
+import { resolveVehicleKey } from "../ocean/vehicleResolver.server";
 import { classifyCatalogueProducts, systemsFromLinkedProducts } from "../ocean/storefrontClassification.server";
 import { filterLinkedProducts, productGroupsFromLinkedProducts } from "../ocean/storefrontClassification";
 
@@ -63,7 +63,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Keep its vehicle and product classification identical to the direct
   // storefront endpoint so the theme does not retain stale category counts.
   if (upstream.has("vehicle_key")) {
-    upstream.set("vehicle_key", canonicalVehicleKey(upstream.get("vehicle_key") || ""));
+    upstream.set("vehicle_key", await resolveVehicleKey(upstream.get("vehicle_key") || ""));
   }
 
   if (name === "product-fitment" || name === "car-fitment" || name === "fitments") {
