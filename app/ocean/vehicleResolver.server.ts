@@ -12,7 +12,9 @@ function slugFacts(key: string) {
   const powerKw = kwAt > 0 && /^\d+$/.test(t[kwAt - 1]) ? Number(t[kwAt - 1]) : 0;
   const engineAt = t.findIndex((x) => /^[nmspb][0-9]{2}$/.test(x));
   const engineCode = engineAt >= 0 ? t.slice(engineAt, engineAt + 3).join("") : "";
-  const derivative = chassis ? t.slice(t.indexOf(chassis) + 1, engineAt >= 0 ? engineAt : kwAt > 0 ? kwAt - 1 : undefined).join("") : "";
+  const derivativeStart = chassis ? t.indexOf(chassis) + 1 : -1;
+  const derivativeEnd = engineAt >= 0 ? engineAt : kwAt > 0 ? Math.max(derivativeStart, kwAt - 1) : undefined;
+  const derivative = derivativeStart > 0 ? t.slice(derivativeStart, derivativeEnd).join("") : "";
   const years = t.filter((x) => /^(19|20)\d{2}$/.test(x)).map(Number);
   return { t, chassis, powerKw, engineCode, derivative, years };
 }
@@ -49,7 +51,7 @@ export async function resolveVehicleKey(raw: string): Promise<string> {
     let score = 0;
     const title = norm(row?.title || row?.detail || row?.engine);
     const engine = norm(row?.engine_code);
-    if (f.engineCode && engine.includes(norm(f.engineCode))) score += 8;
+    if (f.engineCode && (engine.includes(norm(f.engineCode)) || norm(f.engineCode).includes(engine))) score += 8;
     if (f.powerKw && Number(row?.power_kw || 0) === f.powerKw) score += 8;
     if (f.derivative && title.includes(norm(f.derivative))) score += 5;
     if (f.chassis && title.includes(norm(f.chassis))) score += 3;
