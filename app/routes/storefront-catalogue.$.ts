@@ -168,16 +168,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const categorized = await classifyCatalogueProducts(linked.products);
     const additions = systemsFromLinkedProducts(categorized);
     if (!additions.length) return catalogueJson(payload, headers, vehicleKey);
-    const byId = new Map((Array.isArray(payload?.systems) ? payload.systems : [])
-      .filter((row: any) => row?.id).map((row: any) => [String(row.id), row]));
+    const identity = (value: unknown) =>
+      String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "").replace(/system$/, "");
+    const merged = new Map<string, any>();
+    for (const row of (Array.isArray(payload?.systems) ? payload.systems : [])) {
+      const key = identity(row?.id || row?.name);
+      if (key) merged.set(key, row);
+    }
     for (const row of additions) {
-      const existing: any = byId.get(row.id);
-      byId.set(row.id, existing ? {
+      const key = identity(row.id || row.name);
+      if (!key) continue;
+      const existing: any = merged.get(key);
+      merged.set(key, existing ? {
         ...existing,
-        pending_fitment_count: Math.max(Number(existing.pending_fitment_count || 0), row.pending_fitment_count),
+        article_count: Math.max(Number(existing.article_count || 0), Number(row.article_count || 0)),
+        pending_fitment_count: Math.max(Number(existing.pending_fitment_count || 0), Number(row.pending_fitment_count || 0)),
       } : row);
     }
-    return catalogueJson({ ...payload, error: undefined, ok: true, systems: [...byId.values()] }, headers, vehicleKey);
+    return catalogueJson({ ...payload, error: undefined, ok: true, systems: [...merged.values()] }, headers, vehicleKey);
   }
 
   return catalogueJson(await oceanGet(`/${name}`, upstream.toString()), headers, vehicleKey);
