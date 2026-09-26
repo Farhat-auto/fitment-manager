@@ -3,7 +3,12 @@ import { json } from "@remix-run/node";
 import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { classifyCatalogueProducts, systemsFromLinkedProducts } from "../ocean/storefrontClassification.server";
-import { filterLinkedProducts, productGroupsFromLinkedProducts } from "../ocean/storefrontClassification";
+import {
+  filterLinkedProducts,
+  normalizeStorefrontProducts,
+  productGroupsFromLinkedProducts,
+  withCanonicalVehicle,
+} from "../ocean/storefrontClassification";
 import { resolveVehicleKey } from "../ocean/vehicleResolver.server";
 
 const PUBLIC_GET = new Set([
@@ -42,6 +47,7 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.oceancarparts.com",
   "https://oceancarparts.com",
   "https://g5uxzq-gb.myshopify.com",
+  "https://oceancarparts-com-2.myshopify.com",
 ]);
 
 const CHANGING_CATALOGUE = new Set([
@@ -71,6 +77,10 @@ function corsHeaders(request: Request, route: string) {
   };
 }
 
+function catalogueJson(payload: any, headers: HeadersInit, vehicleKey = "") {
+  return json(vehicleKey ? withCanonicalVehicle(payload, vehicleKey) : payload, { headers });
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const name = routeName(params as Record<string, string | undefined>);
   const headers = corsHeaders(request, name);
@@ -94,6 +104,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     upstream.set("vehicle_key", await resolveVehicleKey(upstream.get("vehicle_key") || ""));
   }
 
+  const vehicleKey = upstream.get("vehicle_key") || "";
+
   if (name === "product-fitment" || name === "car-fitment" || name === "fitments") {
     const resolved = stableIdentity({
       shopify_product_id: upstream.get("shopify_product_id") || "",
@@ -103,24 +115,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       brand: upstream.get("brand") || "",
       mpn: upstream.get("mpn") || "",
     });
-    if (!resolved.ok) return json(resolved, { headers });
-    return json(await oceanProductFitmentGet(resolved.identity), { headers });
+    if (!resolved.ok) return catalogueJson(resolved, headers, vehicleKey);
+    return catalogueJson(await oceanProductFitmentGet(resolved.identity), headers, vehicleKey);
   }
 
   if (name === "product") {
-    return json(await oceanGet("/product-review", upstream.toString()), { headers });
+    return catalogueJson(await oceanGet("/product-review", upstream.toString()), headers, vehicleKey);
   }
 
-  if (name === "product-groups" && upstream.get("vehicle_key") &&
+  if (name === "product-groups" && vehicleKey &&
       (upstream.get("assembly_group_id") || upstream.get("system_id"))) {
     const payload = await oceanGet("/product-groups", upstream.toString());
-    const vehicleQuery = new URLSearchParams({ vehicle_key: upstream.get("vehicle_key")! });
+    const vehicleQuery = new URLSearchParams({ vehicle_key: vehicleKey });
     const linked = await oceanGet("/products", vehicleQuery.toString());
-    if (!Array.isArray(linked?.products) || !linked.products.length) return json(payload, { headers });
+    if (!Array.isArray(linked?.products) || !linked.products.length) {
+      return catalogueJson(payload, headers, vehicleKey);
+    }
     const categorized = await classifyCatalogueProducts(linked.products);
     const systemId = upstream.get("assembly_group_id") || upstream.get("system_id") || "";
     const additions = productGroupsFromLinkedProducts(categorized, systemId);
-    if (!additions.length) return json(payload, { headers });
+    if (!additions.length) return catalogueJson(payload, headers, vehicleKey);
     const byId = new Map((Array.isArray(payload?.product_groups) ? payload.product_groups : [])
       .filter((row: any) => row?.id).map((row: any) => [String(row.id), row]));
     for (const row of additions) {
@@ -131,24 +145,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         article_count: Math.max(Number(existing.article_count || 0), row.article_count),
       } : row);
     }
-    return json({ ...payload, error: undefined, ok: true, product_groups: [...byId.values()] }, { headers });
+    return catalogueJson({ ...payload, error: undefined, ok: true, product_groups: [...byId.values()] }, headers, vehicleKey);
   }
 
-  if ((name === "products" || name === "systems") && upstream.get("vehicle_key")) {
+  if ((name === "products" || name === "systems") && vehicleKey) {
     // The manager's product category can lag behind Shopify tags. Fetch the
     // explicit vehicle links before filtering, then classify from Shopify.
-    const vehicleQuery = new URLSearchParams({ vehicle_key: upstream.get("vehicle_key")! });
+    const vehicleQuery = new URLSearchParams({ vehicle_key: vehicleKey });
     const payload = await oceanGet(`/${name}`, name === "products" ? vehicleQuery.toString() : upstream.toString());
     if (name === "products") {
-      if (!Array.isArray(payload?.products)) return json(payload, { headers });
+      if (!Array.isArray(payload?.products)) return catalogueJson(payload, headers, vehicleKey);
       const classified = await classifyCatalogueProducts(payload.products);
-      return json({ ...payload, products: filterLinkedProducts(classified, upstream) }, { headers });
+      return catalogueJson({
+        ...payload,
+        products: normalizeStorefrontProducts(filterLinkedProducts(classified, upstream), vehicleKey),
+      }, headers, vehicleKey);
     }
     const linked = await oceanGet("/products", vehicleQuery.toString());
-    if (!Array.isArray(linked?.products) || !linked.products.length) return json(payload, { headers });
+    if (!Array.isArray(linked?.products) || !linked.products.length) {
+      return catalogueJson(payload, headers, vehicleKey);
+    }
     const categorized = await classifyCatalogueProducts(linked.products);
     const additions = systemsFromLinkedProducts(categorized);
-    if (!additions.length) return json(payload, { headers });
+    if (!additions.length) return catalogueJson(payload, headers, vehicleKey);
     const byId = new Map((Array.isArray(payload?.systems) ? payload.systems : [])
       .filter((row: any) => row?.id).map((row: any) => [String(row.id), row]));
     for (const row of additions) {
@@ -158,8 +177,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         pending_fitment_count: Math.max(Number(existing.pending_fitment_count || 0), row.pending_fitment_count),
       } : row);
     }
-    return json({ ...payload, error: undefined, ok: true, systems: [...byId.values()] }, { headers });
+    return catalogueJson({ ...payload, error: undefined, ok: true, systems: [...byId.values()] }, headers, vehicleKey);
   }
 
-  return json(await oceanGet(`/${name}`, upstream.toString()), { headers });
+  return catalogueJson(await oceanGet(`/${name}`, upstream.toString()), headers, vehicleKey);
 }

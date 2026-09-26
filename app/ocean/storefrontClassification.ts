@@ -1,11 +1,88 @@
 export type CatalogueProduct = Record<string, any>;
 export type Classification = { system: string; group: string; subcategory: string };
 
+/** Reviewed storefront taxonomy for the recovery shock products. Used only when Shopify tags are absent. */
+const REVIEWED_PRODUCT_TAXONOMY: Readonly<Record<string, Classification>> = {
+  "10639645901143": {
+    system: "suspension-system",
+    group: "shock-absorbers",
+    subcategory: "shock-absorbers-parts",
+  },
+  "10758331629911": {
+    system: "suspension-system",
+    group: "shock-absorbers",
+    subcategory: "shock-absorbers-parts",
+  },
+};
+
 function tagValue(tags: unknown, prefix: string) {
   if (!Array.isArray(tags)) return "";
   const tag = tags.find((value) => typeof value === "string" && value.toUpperCase().startsWith(prefix));
   const value = String(tag || "").slice(prefix.length).trim().toLowerCase();
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ? value : "";
+}
+
+export function reviewedProductClassification(productId: unknown): Classification | undefined {
+  return REVIEWED_PRODUCT_TAXONOMY[String(productId || "")];
+}
+
+export function taxonomyIdsMatch(requested: string, actual: unknown) {
+  const want = String(requested || "");
+  const have = String(actual || "");
+  if (!want || want === "all-compatible") return true;
+  if (want === have) return true;
+  const strip = (value: string) => value.replace(/-system$/, "");
+  return Boolean(want && have && strip(want) === strip(have));
+}
+
+export function withCanonicalVehicle<T>(payload: T, vehicleKey: string): T {
+  if (!payload || typeof payload !== "object") return payload;
+  const key = String(vehicleKey || (payload as { vehicle_key?: unknown }).vehicle_key || "");
+  if (!key) return payload;
+  return {
+    ...payload,
+    vehicle_key: key,
+    ocean_vehicle_id: (payload as { ocean_vehicle_id?: unknown }).ocean_vehicle_id || key,
+  };
+}
+
+export function normalizeStorefrontProduct(product: CatalogueProduct, vehicleKey = ""): CatalogueProduct {
+  const state = String(product.fitment?.state || "unverified").toLowerCase();
+  const visible = product.fitment?.visible === true;
+  const shopify_fitment = state === "verified" && visible;
+  const pending_fitment = state === "unverified";
+  const handle = String(product.handle || "").replace(/^\/+|\/+$/g, "");
+  const pdp_path = String(product.pdp_path || (handle ? `/products/${handle}` : ""));
+  let indication = String(product.compatibility_indication || "");
+  if (shopify_fitment) indication = "Fits your vehicle";
+  else if (pending_fitment) indication = "Confirmation pending";
+  else if (!indication) indication = "Compatibility not confirmed";
+  const reviewed = reviewedProductClassification(product.shopify_product_id);
+  return {
+    ...product,
+    shopify_product_id: String(product.shopify_product_id || ""),
+    shopify_variant_id: String(product.shopify_variant_id || ""),
+    sku: String(product.sku || ""),
+    brand: String(product.brand || ""),
+    handle,
+    pdp_path,
+    assembly_group_id: product.assembly_group_id || reviewed?.system || null,
+    category_id: product.category_id || reviewed?.group || null,
+    product_group_id: product.product_group_id || reviewed?.subcategory || null,
+    fitment: {
+      ...(product.fitment || {}),
+      state: product.fitment?.state || "unverified",
+      visible,
+    },
+    shopify_fitment,
+    pending_fitment,
+    compatibility_indication: indication,
+    vehicle_key: vehicleKey || product.vehicle_key || "",
+  };
+}
+
+export function normalizeStorefrontProducts(products: CatalogueProduct[], vehicleKey = "") {
+  return products.map((product) => normalizeStorefrontProduct(product, vehicleKey));
 }
 
 export function classificationFromTags(tags: unknown): Classification {
@@ -18,7 +95,8 @@ export function classificationFromTags(tags: unknown): Classification {
 
 export function enrichCatalogueProducts(products: CatalogueProduct[], byId: Map<string, Classification>) {
   return products.map((product) => {
-    const classification = byId.get(String(product.shopify_product_id || ""));
+    const classification = byId.get(String(product.shopify_product_id || ""))
+      || reviewedProductClassification(product.shopify_product_id);
     if (!classification) return product;
     return {
       ...product,
@@ -34,10 +112,11 @@ export function filterLinkedProducts(products: CatalogueProduct[], params: URLSe
   const category = params.get("category_id") || "";
   const productGroup = params.get("product_group_id") || "";
   return products.filter((product) =>
-    (!system || system === "all-compatible" || product.assembly_group_id === system) &&
-    (!category || category === "all-compatible" || product.category_id === category) &&
+    taxonomyIdsMatch(system, product.assembly_group_id) &&
+    taxonomyIdsMatch(category, product.category_id) &&
     (!productGroup || productGroup === "all-compatible" ||
-      product.product_group_id === productGroup || product.category_id === productGroup),
+      taxonomyIdsMatch(productGroup, product.product_group_id) ||
+      taxonomyIdsMatch(productGroup, product.category_id)),
   );
 }
 
@@ -62,7 +141,7 @@ export function systemsFromLinkedProducts(products: CatalogueProduct[]) {
 export function productGroupsFromLinkedProducts(products: CatalogueProduct[], systemId: string) {
   const groups = new Map<string, { id: string; name: string; group_id: string; article_count: number; pending_fitment_count: number }>();
   for (const product of products) {
-    if (product.assembly_group_id !== systemId) continue;
+    if (!taxonomyIdsMatch(systemId, product.assembly_group_id)) continue;
     const state = String(product.fitment?.state || "").toLowerCase();
     if (state !== "unverified" && !(state === "verified" && product.fitment?.visible === true)) continue;
     const id = String(product.category_id || "");

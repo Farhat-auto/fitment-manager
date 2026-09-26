@@ -3,8 +3,10 @@ import {
   classificationFromTags,
   enrichCatalogueProducts,
   filterLinkedProducts,
+  normalizeStorefrontProduct,
   productGroupsFromLinkedProducts,
   systemsFromLinkedProducts,
+  taxonomyIdsMatch,
 } from "../app/ocean/storefrontClassification.ts";
 
 const product = {
@@ -44,4 +46,24 @@ assert.deepEqual(systemsFromLinkedProducts([{ ...linked, fitment: { state: "veri
 assert.equal(systemsFromLinkedProducts([{ ...linked, fitment: { state: "verified", visible: true } }])[0].article_count, 1);
 assert.equal(enrichCatalogueProducts([{ ...linked, category_id: "manual-group" }], new Map([[product.shopify_product_id, classification]]))[0].category_id, "manual-group");
 assert.deepEqual(classificationFromTags(["CAT:../unsafe"]), { system: "", group: "", subcategory: "" });
+assert.equal(taxonomyIdsMatch("suspension", "suspension-system"), true);
+assert.equal(taxonomyIdsMatch("cooling-system", "engine"), false);
+assert.deepEqual(filterLinkedProducts([linked], new URLSearchParams("system_id=suspension")), [linked]);
+const display = normalizeStorefrontProduct({
+  ...linked,
+  shopify_variant_id: "53310030348631",
+  sku: "31316796155-BEMWQ",
+  brand: "BEMWQ",
+  handle: "shock-absorber-bemwq-31316796155",
+}, "ovh-8a49866f9b684104bfcb");
+assert.equal(display.shopify_fitment, false);
+assert.equal(display.pending_fitment, true);
+assert.equal(display.pdp_path, "/products/shock-absorber-bemwq-31316796155");
+assert.equal(display.compatibility_indication, "Confirmation pending");
+assert.equal(display.vehicle_key, "ovh-8a49866f9b684104bfcb");
+assert.equal(normalizeStorefrontProduct({
+  ...linked,
+  fitment: { state: "verified", visible: true },
+}).shopify_fitment, true);
+assert.equal(productGroupsFromLinkedProducts([linked], "suspension").length, 1);
 console.log("PASS storefront classification and fitment-state separation");
