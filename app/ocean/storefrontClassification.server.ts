@@ -4,7 +4,7 @@ export { systemsFromLinkedProducts } from "./storefrontClassification";
 
 const QUERY = `#graphql
   query StorefrontClassification($ids: [ID!]!) {
-    nodes(ids: $ids) { ... on Product { id status tags } }
+    nodes(ids: $ids) { ... on Product { id status tags productType } }
   }
 `;
 
@@ -34,7 +34,19 @@ export async function classifyCatalogueProducts(products: CatalogueProduct[]) {
       for (const node of result.data.nodes) {
         const id = String(node?.id || "").split("/").pop() || "";
         if (!missing.includes(id) || node.status !== "ACTIVE") continue;
-        cache.set(id, { expires: now + CACHE_MS, classification: classificationFromTags(node.tags) });
+        const classification = classificationFromTags(node.tags);
+        const tags = Array.isArray(node.tags) ? node.tags.map((tag: unknown) => String(tag).toLowerCase()) : [];
+        const productType = String(node.productType || "").toLowerCase();
+        if (!classification.system && (tags.includes("suspension") || /shock\s*absorber/.test(productType))) {
+          classification.system = "suspension-system";
+        }
+        if (!classification.group && (tags.some((tag: string) => tag.includes("shock absorber")) || /shock\s*absorber/.test(productType))) {
+          classification.group = "shock-absorbers";
+        }
+        if (!classification.subcategory && classification.group === "shock-absorbers") {
+          classification.subcategory = "shock-absorbers-parts";
+        }
+        cache.set(id, { expires: now + CACHE_MS, classification });
       }
       if (cache.size > 500) cache.clear();
     } catch (error) {
