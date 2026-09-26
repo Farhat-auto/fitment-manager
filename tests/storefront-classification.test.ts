@@ -66,4 +66,17 @@ assert.equal(normalizeStorefrontProduct({
   fitment: { state: "verified", visible: true },
 }).shopify_fitment, true);
 assert.equal(productGroupsFromLinkedProducts([linked], "suspension").length, 1);
+for (const productId of ["10639645901143", "10758331629911"]) {
+  const unclassified = normalizeStorefrontProduct({
+    shopify_product_id: productId,
+    fitment: { state: "unverified", visible: false },
+  });
+  assert.equal(unclassified.assembly_group_id, null);
+  assert.equal(unclassified.category_id, null);
+  assert.equal(unclassified.product_group_id, null);
+  assert.equal(unclassified.pending_fitment, true);
+  assert.equal(unclassified.shopify_fitment, false);
+  assert.equal(enrichCatalogueProducts([{ shopify_product_id: productId }], new Map()).length, 1);
+  assert.equal(enrichCatalogueProducts([{ shopify_product_id: productId, assembly_group_id: null }], new Map())[0].assembly_group_id, null);
+}
 console.log("PASS storefront classification and fitment-state separation");

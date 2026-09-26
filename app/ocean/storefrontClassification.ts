@@ -1,29 +1,11 @@
 export type CatalogueProduct = Record<string, any>;
 export type Classification = { system: string; group: string; subcategory: string };
 
-/** Reviewed storefront taxonomy for the recovery shock products. Used only when Shopify tags are absent. */
-const REVIEWED_PRODUCT_TAXONOMY: Readonly<Record<string, Classification>> = {
-  "10639645901143": {
-    system: "suspension-system",
-    group: "shock-absorbers",
-    subcategory: "shock-absorbers-parts",
-  },
-  "10758331629911": {
-    system: "suspension-system",
-    group: "shock-absorbers",
-    subcategory: "shock-absorbers-parts",
-  },
-};
-
 function tagValue(tags: unknown, prefix: string) {
   if (!Array.isArray(tags)) return "";
   const tag = tags.find((value) => typeof value === "string" && value.toUpperCase().startsWith(prefix));
   const value = String(tag || "").slice(prefix.length).trim().toLowerCase();
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ? value : "";
-}
-
-export function reviewedProductClassification(productId: unknown): Classification | undefined {
-  return REVIEWED_PRODUCT_TAXONOMY[String(productId || "")];
 }
 
 export function taxonomyIdsMatch(requested: string, actual: unknown) {
@@ -57,7 +39,6 @@ export function normalizeStorefrontProduct(product: CatalogueProduct, vehicleKey
   if (shopify_fitment) indication = "Fits your vehicle";
   else if (pending_fitment) indication = "Confirmation pending";
   else if (!indication) indication = "Compatibility not confirmed";
-  const reviewed = reviewedProductClassification(product.shopify_product_id);
   return {
     ...product,
     shopify_product_id: String(product.shopify_product_id || ""),
@@ -66,9 +47,9 @@ export function normalizeStorefrontProduct(product: CatalogueProduct, vehicleKey
     brand: String(product.brand || ""),
     handle,
     pdp_path,
-    assembly_group_id: product.assembly_group_id || reviewed?.system || null,
-    category_id: product.category_id || reviewed?.group || null,
-    product_group_id: product.product_group_id || reviewed?.subcategory || null,
+    assembly_group_id: product.assembly_group_id || null,
+    category_id: product.category_id || null,
+    product_group_id: product.product_group_id || null,
     fitment: {
       ...(product.fitment || {}),
       state: product.fitment?.state || "unverified",
@@ -95,8 +76,7 @@ export function classificationFromTags(tags: unknown): Classification {
 
 export function enrichCatalogueProducts(products: CatalogueProduct[], byId: Map<string, Classification>) {
   return products.map((product) => {
-    const classification = byId.get(String(product.shopify_product_id || ""))
-      || reviewedProductClassification(product.shopify_product_id);
+    const classification = byId.get(String(product.shopify_product_id || ""));
     if (!classification) return product;
     return {
       ...product,
