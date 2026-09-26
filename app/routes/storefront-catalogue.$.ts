@@ -4,7 +4,7 @@ import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { classifyCatalogueProducts, systemsFromLinkedProducts } from "../ocean/storefrontClassification.server";
 import { filterLinkedProducts, productGroupsFromLinkedProducts } from "../ocean/storefrontClassification";
-import { canonicalVehicleKey } from "../ocean/vehicleAliases";
+import { resolveVehicleKey } from "../ocean/vehicleResolver.server";
 
 const PUBLIC_GET = new Set([
   "makes",
@@ -91,7 +91,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Normalize reviewed legacy theme IDs before every vehicle-specific read.
   // Product verification is still taken exclusively from the linked record.
   if (upstream.has("vehicle_key")) {
-    upstream.set("vehicle_key", canonicalVehicleKey(upstream.get("vehicle_key") || ""));
+    upstream.set("vehicle_key", await resolveVehicleKey(upstream.get("vehicle_key") || ""));
   }
 
   if (name === "product-fitment" || name === "car-fitment" || name === "fitments") {
