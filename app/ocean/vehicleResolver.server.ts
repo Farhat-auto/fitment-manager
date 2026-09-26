@@ -44,10 +44,20 @@ export async function resolveVehicleKey(raw: string): Promise<string> {
   if (modelMatches.length !== 1) return reviewed;
   const model = modelMatches[0];
 
-  const typesPayload = await oceanGet("/types", new URLSearchParams({
+  const vehicleQuery = new URLSearchParams({
     make_id: text(make.id), model_id: text(model.id), limit: "250",
-  }).toString());
-  const candidates = rows(typesPayload, ["types", "engines"]).map((row: any) => {
+  }).toString();
+  // Use the same authoritative vehicle ladder source as the storefront picker.
+  // Older catalogue deployments exposed /types, while the current contract
+  // exposes canonical ovh-* rows through /engines. Try /engines first and
+  // retain /types only as a backwards-compatible source.
+  let typesPayload = await oceanGet("/engines", vehicleQuery);
+  let vehicleRows = rows(typesPayload, ["engines", "types"]);
+  if (!vehicleRows.length) {
+    typesPayload = await oceanGet("/types", vehicleQuery);
+    vehicleRows = rows(typesPayload, ["types", "engines"]);
+  }
+  const candidates = vehicleRows.map((row: any) => {
     let score = 0;
     const title = norm(row?.title || row?.detail || row?.engine);
     const engine = norm(row?.engine_code);
