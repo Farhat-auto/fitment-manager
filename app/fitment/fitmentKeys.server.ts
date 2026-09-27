@@ -126,6 +126,13 @@ export async function setShopifyFitmentKeysMetafield(params: {
             type: "json"
             value: $value
           }
+          {
+            ownerId: $ownerId
+            namespace: "ocean"
+            key: "verified_vehicle_keys"
+            type: "json"
+            value: $value
+          }
         ]
       ) {
         metafields { id }
