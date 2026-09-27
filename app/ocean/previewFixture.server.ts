@@ -46,6 +46,10 @@ export async function runPreviewFixture(body: Record<string, unknown>): Promise<
       ownerId,
       productFound: event.product_missing !== true && Boolean(String(event.shopify_product_id || "").trim()),
       canonicalKeys: derived.keys,
+      legacyReviewKeys: [
+        ...derived.legacy_verified_review_required,
+        ...derived.unknown_vehicle_review_required,
+      ],
       shopifyKeys: Array.isArray(body.current_keys) ? body.current_keys.map(String) : [],
       shopifyCount: body.current_count == null ? 0 : Number(body.current_count),
       shopifyStatus: body.current_status == null ? "none" : String(body.current_status),

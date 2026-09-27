@@ -29,11 +29,13 @@ export type ReconciliationInput = {
   productFound: boolean;
   syncFailed?: boolean;
   canonicalKeys: string[];
+  legacyReviewKeys?: string[];
   shopifyKeys: string[];
   shopifyCount: number | null;
   shopifyStatus: string | null;
   currentMetafields?: Partial<MetafieldSnapshot> | null;
   rollbackManifest?: RollbackManifest | null;
+  cleanupApproved?: boolean;
 };
 
 export function classifyShopifyFitment(input: ReconciliationInput) {
@@ -44,28 +46,37 @@ export function classifyShopifyFitment(input: ReconciliationInput) {
     return { classification: "sync_failed" as ReconciliationClass, missing: [], stale: [], invalid: [] };
   }
   const shopifyKeys = (input.shopifyKeys || []).map((value) => String(value || "").trim()).filter(Boolean);
-  const invalid = shopifyKeys.filter((key) => !isVehicleKey(key));
+  const legacyReview = [...new Set(input.legacyReviewKeys || [])].map((value) => String(value || "").trim()).filter(Boolean);
+  const legacySet = new Set(legacyReview);
+  const invalid = shopifyKeys.filter((key) => !isVehicleKey(key) && !legacySet.has(key));
   if (invalid.length) {
-    return { classification: "invalid_vehicle_key" as ReconciliationClass, missing: [], stale: [], invalid };
+    return {
+      classification: "invalid_vehicle_key" as ReconciliationClass,
+      missing: [],
+      stale: [],
+      invalid,
+      legacy_verified_review_required: legacyReview,
+    };
   }
   const canonical = [...new Set(input.canonicalKeys || [])].sort();
-  const shopify = [...new Set(shopifyKeys)].sort();
+  const shopify = [...new Set(shopifyKeys)].filter((key) => !legacySet.has(key)).sort();
   const missing = canonical.filter((key) => !shopify.includes(key));
   const stale = shopify.filter((key) => !canonical.includes(key));
+  const review = { legacy_verified_review_required: legacyReview };
   if (missing.length) {
-    return { classification: "shopify_missing_fitments" as ReconciliationClass, missing, stale, invalid: [] };
+    return { classification: "shopify_missing_fitments" as ReconciliationClass, missing, stale, invalid: [], ...review };
   }
   if (stale.length) {
-    return { classification: "shopify_stale_fitments" as ReconciliationClass, missing, stale, invalid: [] };
+    return { classification: "shopify_stale_fitments" as ReconciliationClass, missing, stale, invalid: [], ...review };
   }
-  if (Number(input.shopifyCount) !== canonical.length) {
-    return { classification: "wrong_count" as ReconciliationClass, missing, stale, invalid: [] };
+  if (Number(input.shopifyCount) !== canonical.length + legacyReview.filter((key) => shopifyKeys.includes(key)).length) {
+    return { classification: "wrong_count" as ReconciliationClass, missing, stale, invalid: [], ...review };
   }
   const expected = canonical.length ? "verified" : "none";
-  if (String(input.shopifyStatus || "none") !== expected) {
-    return { classification: "wrong_status" as ReconciliationClass, missing, stale, invalid: [] };
+  if (String(input.shopifyStatus || "none") !== expected && legacyReview.length === 0) {
+    return { classification: "wrong_status" as ReconciliationClass, missing, stale, invalid: [], ...review };
   }
-  return { classification: "in_sync" as ReconciliationClass, missing, stale, invalid: [] };
+  return { classification: "in_sync" as ReconciliationClass, missing, stale, invalid: [], ...review };
 }
 
 function text(value: unknown) {
@@ -73,8 +84,11 @@ function text(value: unknown) {
 }
 
 export function buildRollbackManifest(input: ReconciliationInput): RollbackManifest {
-  const canonical = [...new Set(input.canonicalKeys || [])].filter((key) => isVehicleKey(key)).sort();
-  const afterFields = catalogueFitmentMetafields(input.ownerId, canonical);
+  const canonical = [...new Set(input.canonicalKeys || [])].filter((key) => isVehicleKey(key));
+  const currentKeys = [...(input.shopifyKeys || [])].map((key) => String(key || "").trim()).filter(Boolean);
+  const preserved = [...new Set(input.legacyReviewKeys || [])].filter((key) => currentKeys.includes(key) && input.cleanupApproved !== true);
+  const afterKeys = [...new Set([...canonical, ...preserved])].sort();
+  const afterFields = catalogueFitmentMetafields(input.ownerId, afterKeys);
   const after = Object.fromEntries(afterFields.map((field) => [field.key, field.value])) as MetafieldSnapshot;
   const current = input.currentMetafields || {};
   const beforeKeys = JSON.stringify([...(input.shopifyKeys || [])].map((key) => String(key || "").trim()).filter(Boolean));
@@ -97,7 +111,11 @@ export function buildRollbackManifest(input: ReconciliationInput): RollbackManif
 
 export function reconcileFitment(input: ReconciliationInput, mode: "dry_run" | "apply" = "dry_run") {
   const report = classifyShopifyFitment(input);
-  const canonical = [...new Set(input.canonicalKeys || [])].filter((key) => isVehicleKey(key)).sort();
+  const canonical = [...new Set(input.canonicalKeys || [])].filter((key) => isVehicleKey(key));
+  const preserved = [...new Set(input.legacyReviewKeys || [])].filter(
+    (key) => (input.shopifyKeys || []).map((value) => String(value || "").trim()).includes(key) && input.cleanupApproved !== true,
+  );
+  const writeKeys = [...new Set([...canonical, ...preserved])].sort();
   const rollback_manifest = buildRollbackManifest(input);
   if (mode !== "apply" || !input.productFound) {
     return { ...report, mode, applied: false, metafields: null, rollback_manifest };
@@ -126,7 +144,7 @@ export function reconcileFitment(input: ReconciliationInput, mode: "dry_run" | "
     ...report,
     mode,
     applied: true,
-    metafields: catalogueFitmentMetafields(input.ownerId, canonical),
+    metafields: catalogueFitmentMetafields(input.ownerId, writeKeys),
     rollback_manifest,
   };
 }

@@ -18,6 +18,9 @@ export type SyncResult = {
   verified_vehicle_keys?: string[];
   metafields?: ReturnType<typeof catalogueFitmentMetafields>;
   retryable?: boolean;
+  held?: boolean;
+  legacy_verified_review_required?: string[];
+  unknown_vehicle_review_required?: string[];
 };
 
 const memory = new Map<string, SyncResult>();
@@ -50,6 +53,21 @@ export async function processCatalogueSyncEvent(
   if (problem) return { ok: false, wrote: false, duplicate: false, error: problem };
   const derived = deriveVerifiedKeys(event);
   if (!derived.ok) return { ok: false, wrote: false, duplicate: false, error: derived.error };
+  const reviewHold = [
+    ...derived.legacy_verified_review_required,
+    ...derived.unknown_vehicle_review_required,
+  ];
+  if (reviewHold.length && event.cleanup_approved !== true) {
+    return {
+      ok: true,
+      wrote: false,
+      duplicate: false,
+      held: true,
+      verified_vehicle_keys: derived.keys,
+      legacy_verified_review_required: derived.legacy_verified_review_required,
+      unknown_vehicle_review_required: derived.unknown_vehicle_review_required,
+    };
+  }
   const productId = String(event.shopify_product_id || "").trim();
   if (!productId || event.product_missing === true) {
     return { ok: false, wrote: false, duplicate: false, error: "missing_product" };

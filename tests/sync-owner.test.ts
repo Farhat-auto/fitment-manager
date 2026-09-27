@@ -19,6 +19,7 @@ function event(overrides: Record<string, unknown> = {}) {
     operation: "upsert",
     source: "ocean_catalogue",
     timestamp: "2026-09-27T17:00:00Z",
+    canonical_vehicle_keys: [verified, other],
     relationships: [
       { vehicle_key: verified, verification_status: "VERIFIED", review_status: "verified" },
       { vehicle_key: other, verification_status: "UNVERIFIED", review_status: "candidate" },
