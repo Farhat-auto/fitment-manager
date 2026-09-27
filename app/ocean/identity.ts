@@ -163,7 +163,6 @@ export function defaultVerification(action: string, requested?: string, source?:
   }
   if (action === "add" || action === "bulk") {
     if (status === VERIFIED || status === NEEDS_REVIEW || status === UNVERIFIED) return status;
-    if (src === "manual") return VERIFIED;
     return UNVERIFIED;
   }
   if (action === "update" && (status === VERIFIED || status === NEEDS_REVIEW || status === UNVERIFIED)) {
