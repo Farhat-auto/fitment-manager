@@ -30,6 +30,16 @@ export const METAFIELDS_SET = `#graphql
   }
 `;
 
+export function fitmentVehicleMetafields(ownerId: string, fitments: unknown) {
+  const rows = Array.isArray(fitments) ? fitments : [];
+  const vehicleKeys = [...new Set(rows.filter((row: any) => {
+    const status = String(row?.verification_status || row?.verificationStatus || "").trim().toUpperCase();
+    return row?.public_fits === true || row?.visible === true || status === "VERIFIED";
+  }).map((row: any) => String(row?.ocean_vehicle_id || row?.vehicle_key || row?.vehicle_id || "").trim())
+    .filter((value) => /^ovh-[a-z0-9]+$/i.test(value)))];
+  return [{ ownerId, namespace: "ocean", key: "verified_vehicle_keys", type: "json", value: JSON.stringify(vehicleKeys) }];
+}
+
 export function countMetafields(ownerId: string, count: number) {
   const n = Number(count) || 0;
   return [

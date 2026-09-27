@@ -6,7 +6,7 @@ import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
 import { oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
-import { countMetafields, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
+import { countMetafields, fitmentVehicleMetafields, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
 import { appHref } from "../embedded-nav";
 
 function normalizeProductId(raw: string): string {
@@ -72,7 +72,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   });
   if (payload && typeof payload.count === "number" && gid) {
     await admin.graphql(METAFIELDS_SET, {
-      variables: { metafields: countMetafields(gid, payload.count) },
+      variables: { metafields: [...countMetafields(gid, payload.count), ...fitmentVehicleMetafields(gid, payload.fitments)] },
     });
   }
   return json(payload);
