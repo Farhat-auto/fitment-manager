@@ -55,6 +55,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const listing = resolved.ok
     ? await oceanProductFitmentGet(resolved.identity)
     : resolved;
+  // Reconcile pre-sync products on read. This makes existing Ocean fitments
+  // publish to Shopify without forcing the merchant to re-save every product.
+  if (resolved.ok && listing && typeof (listing as any).count === "number" && gid) {
+    await admin.graphql(METAFIELDS_SET, {
+      variables: {
+        metafields: [
+          ...countMetafields(gid, Number((listing as any).count || 0)),
+          ...fitmentVehicleMetafields(gid, (listing as any).fitments),
+        ],
+      },
+    });
+  }
   return json({
     article,
     listing,
