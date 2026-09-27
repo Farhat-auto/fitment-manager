@@ -93,6 +93,19 @@ const reconciled = reconcileFitment({
 }, "dry_run");
 assert.equal(reconciled.classification, "shopify_missing_fitments");
 assert.equal(reconciled.applied, false);
+assert.equal(reconciled.rollback_manifest.shopify_product_id, owner);
+assert.equal(reconciled.rollback_manifest.before.fitment_count, "0");
+assert.equal(JSON.parse(reconciled.rollback_manifest.after.verified_vehicle_keys)[0], verified);
+const blocked = reconcileFitment({
+  ownerId: owner,
+  productFound: true,
+  canonicalKeys: [verified],
+  shopifyKeys: [verified, "ovh-aaaaaaaaaaaaaaaaaaaa"],
+  shopifyCount: 2,
+  shopifyStatus: "verified",
+}, "apply");
+assert.equal(blocked.applied, false);
+assert.equal(blocked.error, "rollback_manifest_required");
 const applied = reconcileFitment({
   ownerId: owner,
   productFound: true,
@@ -100,6 +113,7 @@ const applied = reconcileFitment({
   shopifyKeys: [verified, "ovh-aaaaaaaaaaaaaaaaaaaa"],
   shopifyCount: 2,
   shopifyStatus: "verified",
+  rollbackManifest: blocked.rollback_manifest,
 }, "apply");
 assert.equal(applied.classification, "shopify_stale_fitments");
 assert.equal(applied.applied, true);

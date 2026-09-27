@@ -6,6 +6,7 @@ import {
   stripTitle,
   type StableIdentity,
 } from "./identity";
+import { catalogueOriginProblem } from "./catalogueOrigin.server.ts";
 
 const MANAGER_PREFIX = "/ocean-catalogue-manager/shopify-admin";
 
@@ -51,8 +52,12 @@ export function oceanConfigured() {
 }
 
 export async function oceanGet(path: string, search = "") {
+  const originProblem = catalogueOriginProblem();
+  if (originProblem) {
+    return { ok: false, error: "ocean_catalogue_url_missing", detail: originProblem };
+  }
   if (!oceanConfigured()) {
-    return emptyListing({}, { ok: false, error: "ocean_catalogue_url_missing" });
+    return emptyListing({}, { ok: false, error: "ocean_catalogue_url_missing", detail: "OCEAN_CATALOGUE_URL is not set." });
   }
   const res = await fetch(joinUrl(path, search), { method: "GET", headers: oceanHeaders() });
   const payload = await readJson(res);
@@ -63,8 +68,12 @@ export async function oceanGet(path: string, search = "") {
 }
 
 export async function oceanPost(path: string, body: Record<string, unknown>) {
+  const originProblem = catalogueOriginProblem();
+  if (originProblem) {
+    return { ok: false, error: "ocean_catalogue_url_missing", detail: originProblem };
+  }
   if (!oceanConfigured()) {
-    return emptyListing({}, { ok: false, error: "ocean_catalogue_url_missing" });
+    return emptyListing({}, { ok: false, error: "ocean_catalogue_url_missing", detail: "OCEAN_CATALOGUE_URL is not set." });
   }
   const res = await fetch(joinUrl(path), {
     method: "POST",

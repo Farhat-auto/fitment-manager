@@ -1,11 +1,17 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { authenticate } from "../shopify.server";
+import { assertCatalogueOrigin, authenticate } from "../shopify.server";
 import { processCatalogueSyncEvent } from "../ocean/syncConsumer.ts";
 
 /** Consumes a catalogue sync event with the installed offline Admin session. */
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  try {
+    assertCatalogueOrigin();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "ocean_catalogue_url_missing";
+    return json({ ok: false, error: "ocean_catalogue_url_missing", detail, wrote: false }, { status: 503 });
+  }
   let admin: { graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response> };
   let session: { accessToken?: string; isOnline?: boolean; expires?: Date | string | null };
   try {

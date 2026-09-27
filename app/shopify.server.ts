@@ -3,8 +3,14 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { SupabaseSessionStorage } from "./sessions/supabaseSessionStorage.server";
+import { catalogueOriginProblem } from "./ocean/catalogueOrigin.server.ts";
 
 const sessionStorage = new SupabaseSessionStorage();
+
+export function assertCatalogueOrigin() {
+  const problem = catalogueOriginProblem();
+  if (problem) throw new Error(problem);
+}
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY ?? "",
