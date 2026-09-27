@@ -145,3 +145,22 @@ export async function setShopifyFitmentKeysMetafield(params: {
   return { ok: true, userErrors };
 }
 
+
+
+export async function getProductIdsByVehicleKey(params: {
+  shop_domain: string;
+  vehicle_key: string;
+}): Promise<string[]> {
+  const shop_domain = norm(params.shop_domain);
+  const vehicle_key = norm(params.vehicle_key);
+  if (!shop_domain || !vehicle_key) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("product_fitment")
+    .select("product_id")
+    .eq("shop_domain", shop_domain)
+    .eq("vehicle_key", vehicle_key)
+    .not("product_id", "is", null);
+  if (error) throw error;
+  return Array.from(new Set((data ?? []).map((r: any) => norm(r?.product_id)).filter(Boolean)));
+}
