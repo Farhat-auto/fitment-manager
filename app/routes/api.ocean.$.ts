@@ -3,6 +3,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { oceanGet, oceanPost, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { emptyListing, stableIdentity } from "../ocean/identity";
+import { METAFIELDS_SET, countMetafields, fitmentVehicleMetafields } from "../ocean/metafields";
 
 const ALLOWED = new Set([
   "makes",
@@ -44,7 +45,7 @@ function routeName(params: { "*": string } | Record<string, string | undefined>)
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   if (request.method === "OPTIONS") return preflight();
-  const { cors } = await authenticate.admin(request);
+  const { admin, cors } = await authenticate.admin(request);
   const name = routeName(params as { "*": string });
   if (!ALLOWED.has(name)) {
     return cors(json({ ok: false, error: "not_found", path: name }, { status: 404 }));
@@ -95,6 +96,39 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   const payload = await oceanProductFitmentPost(body);
   const status = payload && payload.ok === false && payload.error === "ambiguous_identity" ? 400 : 200;
+
+  // Keep Shopify storefront fitment in lockstep with the canonical Ocean fitment
+  // service. The technical catalogue uses ocean.verified_vehicle_keys, so every
+  // successful Fitment Manager mutation must refresh that contract immediately.
+  if (status === 200 && payload && payload.ok !== false) {
+    const productId = String(
+      payload.shopify_product_id || body.shopify_product_id || body.product_id || "",
+    ).trim();
+    const ownerId = productId
+      ? (productId.startsWith("gid://shopify/Product/") ? productId : `gid://shopify/Product/${productId}`)
+      : "";
+    if (ownerId) {
+      const fitments = Array.isArray(payload.fitments) ? payload.fitments : [];
+      const metafields = [
+        ...fitmentVehicleMetafields(ownerId, fitments),
+        ...countMetafields(ownerId, fitments.length),
+      ];
+      const syncResponse = await admin.graphql(METAFIELDS_SET, { variables: { metafields } });
+      const syncJson = await syncResponse.json();
+      const userErrors = syncJson?.data?.metafieldsSet?.userErrors ?? [];
+      if (Array.isArray(userErrors) && userErrors.length) {
+        console.error("STOREFRONT_FITMENT_SYNC_FAILED", { ownerId, userErrors });
+        return cors(json({ ...payload, storefront_sync: { ok: false, userErrors } }, { status: 502 }));
+      }
+      payload.storefront_sync = {
+        ok: true,
+        verified_vehicle_keys: JSON.parse(
+          String(fitmentVehicleMetafields(ownerId, fitments)[0]?.value || "[]"),
+        ),
+      };
+    }
+  }
+
   return cors(json(payload, { status }));
 }
 
