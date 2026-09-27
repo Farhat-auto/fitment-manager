@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { oceanGet, oceanPost, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { emptyListing, stableIdentity } from "../ocean/identity";
-import { METAFIELDS_SET, countMetafields, fitmentVehicleMetafields } from "../ocean/metafields";
+import { METAFIELDS_SET, catalogueFitmentMetafields, verifiedVehicleKeys } from "../ocean/metafields";
 
 const ALLOWED = new Set([
   "makes",
@@ -109,10 +109,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       : "";
     if (ownerId) {
       const fitments = Array.isArray(payload.fitments) ? payload.fitments : [];
-      const metafields = [
-        ...fitmentVehicleMetafields(ownerId, fitments),
-        ...countMetafields(ownerId, fitments.length),
-      ];
+      const metafields = catalogueFitmentMetafields(ownerId, verifiedVehicleKeys(fitments));
       const syncResponse = await admin.graphql(METAFIELDS_SET, { variables: { metafields } });
       const syncJson = await syncResponse.json();
       const userErrors = syncJson?.data?.metafieldsSet?.userErrors ?? [];
@@ -122,9 +119,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
       payload.storefront_sync = {
         ok: true,
-        verified_vehicle_keys: JSON.parse(
-          String(fitmentVehicleMetafields(ownerId, fitments)[0]?.value || "[]"),
-        ),
+        verified_vehicle_keys: verifiedVehicleKeys(fitments),
       };
     }
   }
