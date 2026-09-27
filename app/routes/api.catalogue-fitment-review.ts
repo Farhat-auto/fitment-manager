@@ -1,65 +1,52 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { oceanGet, oceanPost } from "../ocean/client.server.ts";
 
-function catalogueOrigin(): string {
-  return String(process.env.OCEAN_CATALOGUE_URL || "").trim().replace(/\/$/, "");
+const ACTIONS = new Set([
+  "verify",
+  "reject",
+  "delete",
+  "conflict",
+  "needs_review",
+  "bulk_verify_authoritative",
+  "bulk_reject",
+]);
+
+function text(value: unknown) {
+  return String(value ?? "").trim();
 }
 
-function reviewUrl(origin: string, sku: string): string {
-  const u = new URL(origin + "/ocean-catalogue-manager/shopify-admin/fitment-review");
-  u.searchParams.set("sku", sku);
-  return u.toString();
+function statusFor(payload: { error?: string; ok?: boolean }) {
+  if (payload?.error === "ocean_catalogue_url_missing") return 503;
+  if (payload?.error) return 400;
+  return payload?.ok === false ? 400 : 200;
 }
 
-async function catalogueJson(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
-  const body = await response.json().catch(() => ({ ok: false, error: "invalid_catalogue_response" }));
-  return json(body, { status: response.status });
-}
-
-/** Authenticated Shopify Admin proxy for Ocean catalogue fitment review. */
+/** Authenticated Shopify Admin proxy. Fitment Manager derives metafields later; this route never writes them. */
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.admin(request);
-  const origin = catalogueOrigin();
-  if (!origin) return json({ ok: false, error: "ocean_catalogue_url_missing" }, { status: 503 });
-
-  const sku = String(new URL(request.url).searchParams.get("sku") || "").trim();
+  const sku = text(new URL(request.url).searchParams.get("sku"));
   if (!sku) return json({ ok: false, error: "sku_required" }, { status: 400 });
-
-  return catalogueJson(reviewUrl(origin, sku), { method: "GET" });
+  const review = await oceanGet("/fitment-review", new URLSearchParams({ sku }).toString());
+  return json(review, { status: statusFor(review) });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
-  const origin = catalogueOrigin();
-  if (!origin) return json({ ok: false, error: "ocean_catalogue_url_missing" }, { status: 503 });
-
   const fd = await request.formData();
-  const action = String(fd.get("action") || "").trim();
-  const sku = String(fd.get("sku") || "").trim();
-  const vehicle_key = String(fd.get("vehicle_key") || "").trim();
-  const reason = String(fd.get("reason") || "").trim();
-
-  if (!["verify", "reject", "delete", "bulk_verify_authoritative", "bulk_reject"].includes(action)) {
-    return json({ ok: false, error: "unsupported_action" }, { status: 400 });
-  }
-  if (!sku && !["bulk_verify_authoritative"].includes(action)) {
+  const actionName = text(fd.get("action"));
+  const sku = text(fd.get("sku"));
+  const vehicle_key = text(fd.get("vehicle_key"));
+  const reason = text(fd.get("reason"));
+  if (!ACTIONS.has(actionName)) return json({ ok: false, error: "unsupported_action" }, { status: 400 });
+  if (!sku && actionName !== "bulk_verify_authoritative") {
     return json({ ok: false, error: "sku_required" }, { status: 400 });
   }
-  if (["verify", "reject", "delete"].includes(action) && !/^ovh-[a-f0-9]+$/i.test(vehicle_key)) {
+  if (["verify", "reject", "delete", "conflict", "needs_review"].includes(actionName) && !/^ovh-[a-f0-9]+$/i.test(vehicle_key)) {
     return json({ ok: false, error: "canonical_vehicle_key_required" }, { status: 400 });
   }
-
-  const actor = String((session as any)?.email || (session as any)?.shop || "shopify-admin").trim();
-  return catalogueJson(origin + "/ocean-catalogue-manager/shopify-admin/fitment-review", {
-    method: "POST",
-    body: JSON.stringify({ action, sku, vehicle_key, actor, reason }),
-  });
+  const actor = text((session as { email?: string; shop?: string }).email || session.shop || "shopify-admin");
+  const review = await oceanPost("/fitment-review", { action: actionName, sku, vehicle_key, actor, reason });
+  return json(review, { status: statusFor(review) });
 }

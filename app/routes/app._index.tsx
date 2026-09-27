@@ -36,6 +36,19 @@ export default function AppIndex() {
 
         <Card>
           <BlockStack gap="200">
+            <Text as="h2" variant="headingMd">Catalogue fitment review</Text>
+            <Text as="p" variant="bodyMd">
+              Review candidate vehicles for one SKU. OE and cross references are not fitment proof.
+              Verify only after authoritative application evidence.
+            </Text>
+            <InlineStack>
+              <Button onClick={() => navigate(to("/app/catalogue-fitment-review"))}>Open review</Button>
+            </InlineStack>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="200">
             <Text as="h2" variant="headingMd">LEGACY Shopify vehicle tools</Text>
             <Text as="p" variant="bodyMd">
               Import/export against <code>fitment.vehicles</code> is retained but no longer writes new
