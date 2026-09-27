@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../supabase.server";
+import { METAFIELDS_SET, catalogueFitmentMetafields } from "../ocean/metafields";
 
 type AdminGraphql = (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response>;
 
@@ -115,34 +116,8 @@ export async function setShopifyFitmentKeysMetafield(params: {
   const ownerId = norm(params.productId);
   const vehicleKeys = Array.from(new Set((params.vehicleKeys || []).map((x) => norm(x)).filter(Boolean)));
 
-  const MUT = `#graphql
-    mutation SetFitmentKeys($ownerId: ID!, $value: String!) {
-      metafieldsSet(
-        metafields: [
-          {
-            ownerId: $ownerId
-            namespace: "custom"
-            key: "fitment_keys"
-            type: "json"
-            value: $value
-          }
-          {
-            ownerId: $ownerId
-            namespace: "ocean"
-            key: "verified_vehicle_keys"
-            type: "json"
-            value: $value
-          }
-        ]
-      ) {
-        metafields { id }
-        userErrors { field message }
-      }
-    }
-  `;
-
-  const value = JSON.stringify(vehicleKeys);
-  const resp = await params.admin.graphql(MUT, { variables: { ownerId, value } });
+  const metafields = catalogueFitmentMetafields(ownerId, vehicleKeys);
+  const resp = await params.admin.graphql(METAFIELDS_SET, { variables: { metafields } });
   const json = await resp.json();
   const userErrors = safeArray<any>(json?.data?.metafieldsSet?.userErrors).map((e) => ({
     field: Array.isArray(e?.field) ? (e.field as string[]) : null,

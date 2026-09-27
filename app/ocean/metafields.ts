@@ -30,17 +30,40 @@ export const METAFIELDS_SET = `#graphql
   }
 `;
 
-export function fitmentVehicleMetafields(ownerId: string, fitments: unknown) {
+export function verifiedVehicleKeys(fitments: unknown): string[] {
   const rows = Array.isArray(fitments) ? fitments : [];
-  const vehicleKeys = [...new Set(rows.filter((row: any) => {
+  const vehicleKeys: string[] = [];
+  for (const row of rows as any[]) {
     const status = String(row?.verification_status || row?.verificationStatus || "").trim().toUpperCase();
-    const source = String(row?.source || "").trim().toLowerCase();
-    return row?.public_fits === true || row?.visible === true || status === "VERIFIED" || (source === "manual" && status !== "NEEDS_REVIEW");
-  }).map((row: any) => String(row?.ocean_vehicle_id || row?.vehicle_key || row?.vehicle_id || row?.vehicle_handle || "").trim())
-    .filter((value) => value && !/^(unknown|null|undefined)$/i.test(value) && !/^\d+$/.test(value)))];
-  return [{ ownerId, namespace: "ocean", key: "verified_vehicle_keys", type: "json", value: JSON.stringify(vehicleKeys) }];
+    const verified = row?.public_fits === true || row?.visible === true || status === "VERIFIED";
+    if (!verified) continue;
+    const value = String(row?.ocean_vehicle_id || row?.vehicle_key || row?.vehicle_id || row?.vehicle_handle || "").trim();
+    if (!value || /^(unknown|null|undefined)$/i.test(value) || /^\d+$/.test(value)) continue;
+    if (!vehicleKeys.includes(value)) vehicleKeys.push(value);
+  }
+  return vehicleKeys;
 }
 
+export function fitmentVehicleMetafields(ownerId: string, fitments: unknown) {
+  return catalogueFitmentMetafields(ownerId, verifiedVehicleKeys(fitments)).filter(
+    (field) => field.namespace === "ocean" && field.key === "verified_vehicle_keys",
+  );
+}
+
+/** Single Shopify writer payload for verified catalogue fitment. */
+export function catalogueFitmentMetafields(ownerId: string, vehicleKeys: string[]) {
+  const keys = [...new Set((vehicleKeys || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  const value = JSON.stringify(keys);
+  const count = String(keys.length);
+  return [
+    { ownerId, namespace: "ocean", key: "verified_vehicle_keys", type: "json", value },
+    { ownerId, namespace: "custom", key: "fitment_keys", type: "json", value },
+    { ownerId, namespace: "ocean", key: "fitment_count", type: "number_integer", value: count },
+    { ownerId, namespace: "ocean", key: "fitment_status", type: "single_line_text_field", value: keys.length ? "verified" : "none" },
+  ];
+}
+
+/** @deprecated Use catalogueFitmentMetafields. This helper must not be a second writer. */
 export function countMetafields(ownerId: string, count: number) {
   const n = Number(count) || 0;
   return [

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePost } from "./api";
-import { METAFIELDS_SET, PRODUCT_QUERY, countMetafields, productFromNode } from "./payload";
+import { PRODUCT_QUERY, productFromNode } from "./payload";
 
 function qs(params) {
   return Object.keys(params)
@@ -91,14 +91,6 @@ export function FitmentApp({ mode }) {
     setView(mode === "action" ? "add" : "list");
   }, [mode]);
 
-  const syncCount = useCallback(
-    async (count) => {
-      if (!product || !product.id) return;
-      await adminGraphql(METAFIELDS_SET, { metafields: countMetafields(product.id, count) });
-    },
-    [product],
-  );
-
   const loadFitments = useCallback(
     async (row) => {
       const target = row || product;
@@ -117,12 +109,9 @@ export function FitmentApp({ mode }) {
         String(payload.shopify_product_id) === String(target.numericId || "");
       if (!sameSku || !sameProduct) return payload;
       setListing(payload || { fitments: [], count: 0, sku: target.sku });
-      if (payload && typeof payload.count === "number") {
-        await syncCount(payload.count);
-      }
       return payload;
     },
-    [product, syncCount],
+    [product],
   );
 
   useEffect(() => {
@@ -291,11 +280,10 @@ export function FitmentApp({ mode }) {
         return payload;
       }
       setListing(payload);
-      await syncCount(payload.count);
       setStatus(i18n.translate("updated"));
       return payload;
     },
-    [identity, i18n, syncCount],
+    [identity, i18n],
   );
 
   const addSelected = useCallback(async () => {

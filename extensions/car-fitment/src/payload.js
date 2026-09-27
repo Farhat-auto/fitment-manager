@@ -73,6 +73,7 @@ export function productFromNode(node) {
   };
 }
 
+// Not a sync owner. Product metafields are written only by app/ocean/metafields.ts.
 export function countMetafields(ownerId, count) {
   const n = Number(count) || 0;
   return [
