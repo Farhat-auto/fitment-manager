@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
+import { getProductHandlesByVehicle, resolveShopDomain } from "../fitment/fitment.server";
 
 const PUBLIC_GET = new Set([
   "makes",
@@ -103,6 +104,52 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (name === "product") {
     return json(await oceanGet("/product-review", upstream.toString()), { headers });
+  }
+
+  // Product compatibility is authoritative in Fitment Manager/Supabase.
+  // Do not depend on the external catalogue service to rediscover a
+  // vehicle -> Shopify product relationship that the merchant already verified.
+  if (name === "products" && upstream.get("vehicle_key")) {
+    const vehicleKey = String(upstream.get("vehicle_key") || "").trim();
+    const shopDomain =
+      upstream.get("shop_domain") ||
+      upstream.get("shop") ||
+      resolveShopDomain(request) ||
+      "g5uxzq-gb.myshopify.com";
+
+    const handles = await getProductHandlesByVehicle({
+      shop_domain: shopDomain,
+      vehicle_key: vehicleKey,
+      subcategory_key:
+        upstream.get("subcategory_key") ||
+        upstream.get("product_group_id") ||
+        upstream.get("category_id") ||
+        null,
+    });
+
+    if (handles.length) {
+      return json(
+        {
+          ok: true,
+          source: "fitment-manager",
+          shop_domain: shopDomain,
+          vehicle_key: vehicleKey,
+          product_handles: handles,
+          products: handles.map((handle) => ({
+            handle,
+            product_handle: handle,
+            shopify_fitment: true,
+            pending_fitment: false,
+          })),
+          confirmed_fitment_count: handles.length,
+          pending_fitment_count: 0,
+          count: handles.length,
+        },
+        { headers },
+      );
+    }
+    // Fail closed and preserve taxonomy-aware upstream behavior when there are
+    // no merchant-confirmed rows for this vehicle/category.
   }
 
   return json(await oceanGet(`/${name}`, upstream.toString()), { headers });
