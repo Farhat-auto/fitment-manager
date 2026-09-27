@@ -1,0 +1,8 @@
+{
+  "name": "car-fitment",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "preact": "^10.25.0"
+  }
+}

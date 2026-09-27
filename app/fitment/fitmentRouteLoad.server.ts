@@ -1,12 +1,8 @@
 /**
- * Fitment product-page loader data.
- *
- * Shopify GraphQL throttle on catalog/vehicle listing must not 500 this page.
- * Compatibility is fail-closed: if selected-product data cannot be read, return
- * zero vehicles and never invent fitment. Ocean remains the fitment authority.
+ * LEGACY loader for isolated /app/fitment/:handle only.
+ * Do not import from /app/products/:productId. Ocean remains the fitment authority.
  * Identity: Shopify product ID → variant ID → SKU → Brand+MPN. Title is never identity.
  */
-
 import { GET_PRODUCT_FOR_FITMENT_PAGE } from "../graphql/fitment.ts";
 import { listCatalogMetaobjectsCached } from "../utils/catalogMetaobjectCache.server.ts";
 import { adminGraphqlJson, isShopifyThrottled, type ShopifyGraphqlClient } from "../utils/shopifyGraphql.server.ts";

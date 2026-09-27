@@ -722,6 +722,13 @@ export default function ImportCsv() {
       }}
     >
       <BlockStack gap="400">
+        <Banner tone="warning" title="LEGACY Shopify vehicle CSV import">
+          <p>
+            This page is isolated rollback/audit tooling. It is not the Ocean CAR FITMENT workflow.
+            Apply is rejected: new compatibility is Ocean <code>product_fitment</code> →{" "}
+            <code>ocean_vehicle_id</code>. Historical Shopify vehicle data is not deleted.
+          </p>
+        </Banner>
         {error ? (
           <Banner tone="critical" title="Import error">
             <p>{error}</p>

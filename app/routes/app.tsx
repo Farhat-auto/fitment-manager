@@ -26,8 +26,6 @@ export default function App() {
         </Link>
         <Link to="/app/products">Products</Link>
         <Link to="/app/images">Images</Link>
-        <Link to="/app/import">Import</Link>
-        <Link to="/app/export">Export</Link>
         <Link to="/app/settings">Settings</Link>
       </ui-nav-menu>
       <Outlet />

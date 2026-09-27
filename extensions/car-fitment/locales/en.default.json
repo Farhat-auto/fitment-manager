@@ -38,5 +38,5 @@
   "error": "Could not update car fitment.",
   "fail-closed": "Only explicit product_fitment rows count. Title, tags, vendor, type, collection and description are never used.",
   "oe-warning": "Same OE number does not automatically mean same vehicle fitment.",
-  "legacy-warning": "Legacy Shopify vehicles are reference only and are not Ocean-verified."
+  "legacy-warning": "Shopify is commerce only. Vehicle identity is ocean_vehicle_id in the Ocean Catalogue."
 }

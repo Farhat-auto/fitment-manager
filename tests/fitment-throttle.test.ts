@@ -222,12 +222,15 @@ await check("Fitment route THROTTLED on the product query fails closed and does 
 });
 
 await check("Fitment route loader catch shape is HTTP 200 payload, not a thrown GraphqlQueryError", async () => {
+  const isolated = source("app/fitment/fitmentRouteLoad.server.ts");
+  assert.match(isolated, /loadFitmentRouteData/);
+  assert.match(isolated, /emptyFitmentRoutePayload/);
+  assert.match(isolated, /shopifyThrottled/);
   const route = source("app/routes/app.fitment.$productHandle.tsx");
-  assert.match(route, /loadFitmentRouteData/);
-  assert.match(route, /isShopifyThrottled/);
-  assert.match(route, /emptyFitmentRoutePayload/);
+  assert.match(route, /\/app\/products\/\$\{numericId\}/);
+  assert.doesNotMatch(route, /getVehicleIndex/);
   assert.doesNotMatch(route, /paginateMetaobjects\(\{/);
-  assert.match(route, /A temporary Shopify GraphQL throttle/);
+  assert.doesNotMatch(route, /loadFitmentRouteData/);
 });
 
 await check("opening one product does not rebuild the Shopify vehicle catalogue", async () => {

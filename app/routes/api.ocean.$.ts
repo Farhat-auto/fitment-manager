@@ -16,6 +16,8 @@ const ALLOWED = new Set([
   "vehicle-search",
   "search-vehicles",
   "vehicles",
+  "vehicle",
+  "vehicle-get",
   "product-fitment",
   "car-fitment",
   "fitments",
@@ -23,6 +25,12 @@ const ALLOWED = new Set([
   "product-review",
   "analyse",
   "storefront-compatibility",
+  "article-candidates",
+  "article-search",
+  "article-map",
+  "map-article",
+  "article-create",
+  "create-article",
 ]);
 
 function preflight() {
@@ -84,6 +92,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const payload = await oceanPost(`/${name}`, body);
     return cors(json(payload));
   }
+  if (
+    name === "article-candidates" ||
+    name === "article-search" ||
+    name === "article-map" ||
+    name === "map-article" ||
+    name === "article-create" ||
+    name === "create-article"
+  ) {
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+    const payload = await oceanPost(`/${name}`, body);
+    return cors(json(payload));
+  }
   if (name !== "product-fitment" && name !== "car-fitment" && name !== "fitments") {
     return cors(json({ ok: false, error: "method_not_allowed" }, { status: 405 }));
   }
@@ -93,6 +118,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } catch {
     body = {};
   }
+  const mutation = String(body.action || "").trim().toLowerCase();
+  if (mutation === "add" && body.explicit_confirmation !== "save_fitment") {
+    return cors(
+      json(
+        { ok: false, error: "explicit_confirmation_required", action: mutation },
+        { status: 409 },
+      ),
+    );
+  }
+  // Confirmation is a Fitment Manager safety gate only; never forward it to
+  // the catalogue service as fitment data.
+  if ("explicit_confirmation" in body) delete body.explicit_confirmation;
   const payload = await oceanProductFitmentPost(body);
   const status = payload && payload.ok === false && payload.error === "ambiguous_identity" ? 400 : 200;
   return cors(json(payload, { status }));

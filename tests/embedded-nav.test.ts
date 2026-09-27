@@ -119,6 +119,10 @@ check("App Bridge AppProvider remains the embed strategy", () => {
   assert.match(app, /isEmbeddedApp/);
   assert.match(app, /ui-nav-menu/);
   assert.match(app, /to="\/app\/products"/);
+  assert.match(app, /to="\/app\/images"/);
+  assert.match(app, /to="\/app\/settings"/);
+  assert.doesNotMatch(app, /to="\/app\/import"/);
+  assert.doesNotMatch(app, /to="\/app\/export"/);
   const entry = source("app/entry.client.tsx");
   assert.match(entry, /canonicalizeIframePathname/);
   assert.match(entry, /history\.replaceState/);

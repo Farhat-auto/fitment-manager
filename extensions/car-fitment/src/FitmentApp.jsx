@@ -176,7 +176,6 @@ export function FitmentApp({ mode }) {
         barcode: product.barcode,
         handle: product.handle,
         product_type: product.productType,
-        legacy_fitment: product.legacyVehicles || product.customVehicles,
       },
     }).then((payload) => {
       if (!cancelled) setReview(payload);
@@ -539,9 +538,6 @@ export function FitmentApp({ mode }) {
               );
             })}
             <s-banner>{i18n.translate("legacy-warning")}</s-banner>
-            {product && (product.legacyVehicles || product.customVehicles) ? (
-              <s-text>Legacy Shopify vehicles (reference only): {String(product.legacyVehicles || product.customVehicles).slice(0, 280)}</s-text>
-            ) : null}
           </s-stack>
         ) : null}
         {workspace === "family" ? (

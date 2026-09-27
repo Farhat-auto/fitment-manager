@@ -1,8 +1,17 @@
 /**
  * Admin GraphQL operations for Fitment Manager.
  *
- * Metafield: fitment.vehicles (type: list.metaobject_reference)
- * Metaobject type: vehicle
+ * Ocean Catalogue / PostgreSQL is the technical vehicle authority
+ * (ocean_vehicle_id + product_fitment). Shopify vehicle metaobject queries
+ * below are LEGACY READ-ONLY for isolated rollback/audit routes.
+ *
+ * The normal products list uses compact ocean.fitment_count only.
+ *
+ * LEGACY vehicle queries in this file: GET_PRODUCT_FITMENT, SEARCH_VEHICLES,
+ * SET_FITMENT_VEHICLES, GET_PRODUCTS_WITH_FITMENT_COUNT, GET_PRODUCT_FOR_FITMENT_PAGE,
+ * ListMetaobjectsByType (vehicle/index pagination).
+ * Do not import those from /app/products or /app/products/:productId.
+ * Catalog classification on the normal path uses LIST_CATALOG_* / labels queries.
  */
 
 export const GET_PRODUCT_FITMENT = `#graphql
@@ -276,6 +285,7 @@ export const GET_PRODUCT_ID_BY_HANDLE = `#graphql
   }
 `;
 
+/** Normal products list. Fitment badge is ocean.fitment_count, not Shopify vehicle GIDs. */
 export const GET_PRODUCTS_FOR_FITMENT_ADMIN = `#graphql
   query GetProductsForFitmentAdmin($first: Int! = 50, $after: String, $query: String) {
     products(first: $first, after: $after, query: $query) {
@@ -299,10 +309,7 @@ export const GET_PRODUCTS_FOR_FITMENT_ADMIN = `#graphql
         }
         article_number: metafield(namespace: "custom", key: "article_number") { value }
         brand: metafield(namespace: "custom", key: "brand") { value }
-        fitment: metafield(namespace: "fitment", key: "vehicles") {
-          value
-          jsonValue
-        }
+        oceanFitmentCount: metafield(namespace: "ocean", key: "fitment_count") { value }
         category: metafield(namespace: "custom", key: "catalog_main_category") {
           value
           reference { ... on Metaobject { id displayName } }
