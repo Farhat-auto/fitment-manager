@@ -13,6 +13,7 @@ import {
 } from "@shopify/polaris";
 import {
   UNVERIFIED,
+  VERIFIED,
   listingBelongsTo,
   resetProductScreen,
   storefrontLabel,
@@ -112,7 +113,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   const [checked, setChecked] = React.useState<Record<string, boolean>>({});
   const [editing, setEditing] = React.useState<VehicleRow | null>(null);
   const [source, setSource] = React.useState("manual");
-  const [verification, setVerification] = React.useState(UNVERIFIED);
+  const [verification, setVerification] = React.useState(VERIFIED);
   const [position, setPosition] = React.useState("");
   const [side, setSide] = React.useState("");
   const [note, setNote] = React.useState("");
@@ -148,7 +149,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setStatus("");
     setImportText("");
     setSource("manual");
-    setVerification(UNVERIFIED);
+    setVerification(VERIFIED);
     setPosition("");
     setSide("");
     setNote("");
