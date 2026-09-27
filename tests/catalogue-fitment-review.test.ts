@@ -17,5 +17,9 @@ assert.match(api, /oceanPost/);
 assert.doesNotMatch(api, /metafieldsSet/);
 assert.match(ui, /Needs review/);
 assert.match(ui, /Remove invalid candidate/);
+assert.match(ui, /vehicle_active !== false/);
+assert.match(ui, /Open product in Shopify/);
+assert.match(ui, /trust_class/);
+assert.doesNotMatch(ui, /metafieldsSet/);
 
 console.log("PASS catalogue fitment review");

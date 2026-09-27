@@ -16,12 +16,17 @@ type FitmentRow = {
   engine?: string;
   engine_code?: string;
   power_kw?: string;
+  power_hp?: string;
   year_from?: string;
   year_to?: string;
   evidence?: string;
   evidence_type?: string;
+  evidence_reference?: string;
   trust_level?: string;
+  trust_class?: string;
   source?: string;
+  source_ref?: string;
+  vehicle_active?: boolean;
   review_status?: string;
   conflict_reason?: string;
 };
@@ -35,6 +40,8 @@ type ReviewPayload = {
   mpn?: string;
   shopify_product_id?: string;
   shopify_variant_id?: string;
+  shopify_admin_path?: string;
+  image_url?: string;
   candidate_fitments?: FitmentRow[];
   verified_fitments?: FitmentRow[];
   rejected_fitments?: FitmentRow[];
@@ -102,19 +109,23 @@ function Rows({ rows, sku }: { rows: FitmentRow[]; sku: string }) {
       {rows.map((row, index) => {
         const key = text(row.vehicle_key);
         const place = [row.make, row.model, row.generation].filter(Boolean).join(" · ") || "—";
-        const engine = [row.engine || row.engine_code, row.power_kw ? `${row.power_kw} kW` : "", [row.year_from, row.year_to].filter(Boolean).join("–")].filter(Boolean).join(" · ") || "—";
+        const power = [row.power_kw ? `${row.power_kw} kW` : "", row.power_hp ? `${row.power_hp} HP` : ""].filter(Boolean).join(" / ");
+        const engine = [row.engine || row.engine_code, power, [row.year_from, row.year_to].filter(Boolean).join("–")].filter(Boolean).join(" · ") || "—";
+        const evidence = [row.evidence_type, row.evidence, row.evidence_reference || row.source_ref].map(text).filter(Boolean).join(" · ") || "—";
+        const trust = [row.trust_class, row.trust_level].map(text).filter(Boolean).join(" · ") || "—";
+        const canVerify = /^ovh-[a-f0-9]+$/i.test(key) && row.vehicle_active !== false;
         return (
           <IndexTable.Row id={String(row.id || key || index)} key={String(row.id || key || index)} position={index}>
             <IndexTable.Cell>{text(row.vehicle) || "—"}</IndexTable.Cell>
             <IndexTable.Cell>{key || "—"}</IndexTable.Cell>
             <IndexTable.Cell>{place}</IndexTable.Cell>
             <IndexTable.Cell>{engine}</IndexTable.Cell>
-            <IndexTable.Cell>{text(row.evidence_type || row.evidence) || "—"}</IndexTable.Cell>
-            <IndexTable.Cell>{text(row.trust_level) || "—"}</IndexTable.Cell>
+            <IndexTable.Cell>{evidence}</IndexTable.Cell>
+            <IndexTable.Cell>{trust}</IndexTable.Cell>
             <IndexTable.Cell>{text(row.source) || "—"}</IndexTable.Cell>
             <IndexTable.Cell>
               <InlineStack gap="200">
-                <Decision actionName="verify" label="Verify" sku={sku} vehicleKey={key} />
+                {canVerify ? <Decision actionName="verify" label="Verify" sku={sku} vehicleKey={key} /> : <Text as="span">Canonical vehicle required</Text>}
                 <Decision actionName="reject" label="Reject" sku={sku} vehicleKey={key} tone="critical" />
                 <Decision actionName="needs_review" label="Needs review" sku={sku} vehicleKey={key} />
                 <Decision actionName="delete" label="Remove invalid candidate" sku={sku} vehicleKey={key} tone="critical" />
@@ -153,9 +164,13 @@ export default function CatalogueFitmentReview() {
           <BlockStack gap="400">
             <Card>
               <BlockStack gap="200">
+                {text(review.image_url) ? <img src={text(review.image_url)} alt="" width={72} height={72} /> : null}
                 <Text as="h2" variant="headingMd">{text(review.name || review.sku)}</Text>
                 <Text as="p">SKU {text(review.sku)} · Brand {text(review.brand) || "—"} · MPN {text(review.mpn) || "—"}</Text>
                 <Text as="p">Shopify product {text(review.shopify_product_id) || "—"} · variant {text(review.shopify_variant_id) || "—"}</Text>
+                {text(review.shopify_product_id) ? (
+                  <Button url={text(review.shopify_admin_path) || `shopify:admin/products/${text(review.shopify_product_id)}`}>Open product in Shopify</Button>
+                ) : null}
                 <Text as="p">OE {oes.length ? oes.join(", ") : "none"} · Cross references {refs.length ? refs.join(", ") : "none"}</Text>
                 <InlineStack gap="200">
                   <Badge>{`${candidates.length} candidates`}</Badge>
