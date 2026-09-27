@@ -37,7 +37,7 @@ export function fitmentVehicleMetafields(ownerId: string, fitments: unknown) {
     const source = String(row?.source || "").trim().toLowerCase();
     return row?.public_fits === true || row?.visible === true || status === "VERIFIED" || (source === "manual" && status !== "NEEDS_REVIEW");
   }).map((row: any) => String(row?.ocean_vehicle_id || row?.vehicle_key || row?.vehicle_id || row?.vehicle_handle || "").trim())
-    .filter((value) => value && !/^(unknown|null|undefined)$/i.test(value)))];
+    .filter((value) => value && !/^(unknown|null|undefined)$/i.test(value) && !/^\d+$/.test(value)))];
   return [{ ownerId, namespace: "ocean", key: "verified_vehicle_keys", type: "json", value: JSON.stringify(vehicleKeys) }];
 }
 
