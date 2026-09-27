@@ -46,8 +46,9 @@ export async function processCatalogueSyncEvent(
 ): Promise<SyncResult> {
   const seen = options.seen || memory;
   const eventId = String(event.event_id || "");
-  if (eventId && seen.has(eventId)) {
-    return { ...seen.get(eventId), duplicate: true, wrote: false };
+  const prior = eventId ? seen.get(eventId) : undefined;
+  if (prior) {
+    return { ...prior, duplicate: true, wrote: false };
   }
   const problem = sessionProblem(admin);
   if (problem) return { ok: false, wrote: false, duplicate: false, error: problem };
