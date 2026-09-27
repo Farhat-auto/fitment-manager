@@ -4,6 +4,7 @@ import { json } from "@remix-run/node";
 import { oceanGet, oceanProductFitmentGet } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { getProductHandlesByVehicle, resolveShopDomain } from "../fitment/fitment.server";
+import { getProductIdsByVehicleKey } from "../fitment/fitmentKeys.server";
 
 const PUBLIC_GET = new Set([
   "makes",
@@ -117,7 +118,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       resolveShopDomain(request) ||
       "g5uxzq-gb.myshopify.com";
 
-    const handles = await getProductHandlesByVehicle({
+    const productIds = await getProductIdsByVehicleKey({
+      shop_domain: shopDomain,
+      vehicle_key: vehicleKey,
+    });
+    const legacyHandles = productIds.length ? [] : await getProductHandlesByVehicle({
       shop_domain: shopDomain,
       vehicle_key: vehicleKey,
       subcategory_key:
@@ -127,23 +132,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         null,
     });
 
-    if (handles.length) {
+    if (productIds.length || legacyHandles.length) {
       return json(
         {
           ok: true,
-          source: "fitment-manager",
+          source: productIds.length ? "product_fitment" : "legacy_fitment",
           shop_domain: shopDomain,
           vehicle_key: vehicleKey,
-          product_handles: handles,
-          products: handles.map((handle) => ({
-            handle,
-            product_handle: handle,
-            shopify_fitment: true,
-            pending_fitment: false,
-          })),
-          confirmed_fitment_count: handles.length,
+          product_ids: productIds,
+          product_handles: legacyHandles,
+          products: [
+            ...productIds.map((product_id) => ({
+              product_id,
+              shopify_product_id: product_id,
+              shopify_fitment: true,
+              pending_fitment: false,
+            })),
+            ...legacyHandles.map((handle) => ({
+              handle,
+              product_handle: handle,
+              shopify_fitment: true,
+              pending_fitment: false,
+            })),
+          ],
+          confirmed_fitment_count: productIds.length + legacyHandles.length,
           pending_fitment_count: 0,
-          count: handles.length,
+          count: productIds.length + legacyHandles.length,
         },
         { headers },
       );
