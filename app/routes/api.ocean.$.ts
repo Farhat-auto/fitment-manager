@@ -70,7 +70,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return preflight();
-  const { cors } = await authenticate.admin(request);
+  const { admin, cors } = await authenticate.admin(request);
   const name = routeName(params as { "*": string });
   if (!ALLOWED.has(name)) {
     return cors(json({ ok: false, error: "not_found", path: name }, { status: 404 }));
