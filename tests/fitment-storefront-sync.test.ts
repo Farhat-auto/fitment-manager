@@ -7,10 +7,11 @@ const [field] = fitmentVehicleMetafields(ownerId, [
   { ocean_vehicle_id: "ovh-e46-318i", public_fits: true },
   { vehicle_key: "ovh-pending", verification_status: "UNVERIFIED" },
   { vehicle_key: "516118249815", verification_status: "VERIFIED" },
+  { vehicle_key: "mercedes-benz-c-class-w205-c-200-205-042-m-274-920-135-kw-184-hp-1991-cc-petrol-saloon-12-2013-08-2018", verification_status: "VERIFIED" },
 ]);
 assert.equal(field.ownerId, ownerId);
 assert.equal(field.namespace, "ocean");
 assert.equal(field.key, "verified_vehicle_keys");
 assert.equal(field.type, "json");
-assert.deepEqual(JSON.parse(field.value), ["ovh-e46-318i"]);
+assert.deepEqual(JSON.parse(field.value), ["ovh-e46-318i", "mercedes-benz-c-class-w205-c-200-205-042-m-274-920-135-kw-184-hp-1991-cc-petrol-saloon-12-2013-08-2018"]);
 console.log("PASS verified fitment vehicle storefront sync");
