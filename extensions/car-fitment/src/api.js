@@ -74,3 +74,38 @@ export async function adminGraphql(query, variables) {
   });
   return res.json();
 }
+
+export async function cataloguePages(path, keys) {
+  const names = Array.isArray(keys) ? keys : [keys];
+  const rows = [];
+  const seen = {};
+  let offset = 0;
+  for (let page = 0; page < 40; page += 1) {
+    const join = path.indexOf("?") === -1 ? "?" : "&";
+    const payload = await catalogueGet(path + join + "limit=250&offset=" + offset);
+    let batch = [];
+    for (let i = 0; i < names.length; i += 1) {
+      const found = payload && payload[names[i]];
+      if (found && found.length) {
+        batch = found;
+        break;
+      }
+    }
+    let added = 0;
+    batch.forEach((row) => {
+      const id = row && (row.id || row.vehicle_key || row.vehicle_id);
+      if (id == null || seen[id]) return;
+      seen[id] = true;
+      rows.push(row);
+      added += 1;
+    });
+    const meta = (payload && payload.page_meta) || {};
+    if (!batch.length || !added || meta.has_next === false) break;
+    offset += Number(meta.limit) || batch.length;
+  }
+  return rows;
+}
+
+export function loadMakes() {
+  return cataloguePages("/makes?has_vehicles=0", "makes");
+}

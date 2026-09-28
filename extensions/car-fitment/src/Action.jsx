@@ -1,6 +1,7 @@
+import "@shopify/ui-extensions/preact";
 import { render } from "preact";
-import { FitmentApp } from "./FitmentApp";
+import { FitmentGuard } from "./guard.jsx";
 
 export default async () => {
-  render(<FitmentApp mode="action" />, document.body);
+  render(<FitmentGuard mode="action" />, document.body);
 };

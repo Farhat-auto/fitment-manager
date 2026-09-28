@@ -32,6 +32,7 @@
   "import-help": "One Ocean vehicle_id per line, or CSV with vehicle_id, position, side, source, verification_status. Descriptions are not stored as free text.",
   "zero": "Fitment: 0 vehicles. Compatibility is UNKNOWN until staff add an explicit vehicle.",
   "loading": "Loading car fitment…",
+  "select-products": "Select one or more products, then open CAR FITMENT.",
   "empty-search": "No matching vehicles in the Ocean catalogue.",
   "ladder-error": "Vehicle catalogue could not be loaded. Fitment is not guessed from the product title.",
   "updated": "Vehicle compatibility updated.",

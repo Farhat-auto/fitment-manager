@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectedProductIds } from "../extensions/car-fitment/src/selection.js";
 import {
   UNVERIFIED,
   NEEDS_REVIEW,
@@ -181,6 +182,45 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   assert.match(toml, /admin.product-index.selection-action.render/);
   const locales = source("extensions/car-fitment/locales/en.default.json");
   assert.match(locales, /Ocean Catalogue \/ CAR FITMENT/);
+  assert.match(locales, /Select one or more products, then open CAR FITMENT/);
+});
+
+check("CAR FITMENT product-page action leaves the host spinner", () => {
+  const action = source("extensions/car-fitment/src/Action.jsx");
+  const block = source("extensions/car-fitment/src/Block.jsx");
+  assert.match(action, /@shopify\/ui-extensions\/preact/);
+  assert.match(block, /@shopify\/ui-extensions\/preact/);
+  const app = source("extensions/car-fitment/src/FitmentApp.jsx");
+  assert.match(app, /@shopify\/ui-extensions\/preact/);
+  assert.match(app, /loading: false/);
+  assert.match(app, /select-products/);
+  assert.match(app, /has_vehicles=0/);
+  assert.match(app, /selectedProductIds/);
+  assert.match(source("extensions/car-fitment/src/selection.js"), /Array\.isArray/);
+  assert.deepEqual(selectedProductIds(undefined), []);
+  assert.deepEqual(selectedProductIds({}), []);
+  assert.deepEqual(
+    selectedProductIds({ selected: { peek: () => [{ id: "gid://shopify/Product/1" }] } }),
+    ["gid://shopify/Product/1"],
+  );
+  assert.deepEqual(selectedProductIds({ selected: [{ id: "gid://shopify/Product/2" }] }), [
+    "gid://shopify/Product/2",
+  ]);
+  assert.deepEqual(selectedProductIds({ product: { id: "gid://shopify/Product/3" } }), [
+    "gid://shopify/Product/3",
+  ]);
+  assert.deepEqual(selectedProductIds({ selected: { peek: () => { throw new Error("unready"); } } }), []);
+  const api = source("extensions/car-fitment/src/api.js");
+  assert.match(api, /\/makes\?has_vehicles=0/);
+  assert.match(api, /has_next/);
+  const pkg = source("extensions/car-fitment/package.json");
+  assert.match(pkg, /@shopify\/ui-extensions/);
+  assert.match(pkg, /@preact\/signals/);
+  assert.match(action, /\.\/guard\.jsx/);
+  assert.match(block, /\.\/guard\.jsx/);
+  const guard = source("extensions/car-fitment/src/guard.jsx");
+  assert.match(guard, /s-admin-action/);
+  assert.match(guard, /loading=\{false\}/);
 });
 
 check("OE family never copies fitment", () => {
