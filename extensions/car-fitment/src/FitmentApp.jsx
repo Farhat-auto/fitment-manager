@@ -1,5 +1,4 @@
 import "@shopify/ui-extensions/preact";
-import { Fragment } from "preact";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePages, cataloguePost, loadMakes } from "./api.js";
 import { PRODUCT_QUERY, productFromNode } from "./payload.js";
@@ -18,32 +17,22 @@ function qs(params) {
 
 const TEMPLATE_URL = "https://fitment-manager.vercel.app/fitment-application-template.csv";
 
-export function FitmentApp({ mode, insideHost }) {
+export function FitmentApp({ mode }) {
   const shop = typeof shopify === "undefined" ? {} : shopify || {};
   const close = typeof shop.close === "function" ? shop.close : null;
-  let data = {};
-  try {
-    data = shop.data || {};
-  } catch (err) {
-    data = {};
-  }
   let i18n = { translate: (key) => key };
   try {
     if (shop.i18n && typeof shop.i18n.translate === "function") i18n = shop.i18n;
   } catch (err) {
     i18n = { translate: (key) => key };
   }
-  let selectedIds = [];
-  try {
-    selectedIds = selectedProductIds(data);
-  } catch (err) {
-    selectedIds = [];
-  }
-  const fallbackId = selectedIds[0] || "";
-  const [activeId, setActiveId] = useState(selectedIds[0] || fallbackId);
-  const selectedId = activeId || fallbackId;
+  // Read the product selection after the window is on screen. Reading it
+  // during the first paint can leave the products page on the host spinner.
+  const [pickedIds, setPickedIds] = useState([]);
+  const [activeId, setActiveId] = useState("");
+  const selectedId = activeId || pickedIds[0] || "";
   const [product, setProduct] = useState(null);
-  const [phase, setPhase] = useState(selectedIds.length ? "loading" : "choose");
+  const [phase, setPhase] = useState("choose");
   const [products, setProducts] = useState([]);
   const [listing, setListing] = useState({ fitments: [], count: 0, sources: [], verification_statuses: [] });
   const [workspace, setWorkspace] = useState("fitment");
@@ -148,7 +137,19 @@ export function FitmentApp({ mode, insideHost }) {
   });
 
   useEffect(() => {
-    const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    let ids = [];
+    try {
+      const current = typeof shopify === "undefined" ? {} : shopify || {};
+      ids = selectedProductIds(current.data || {});
+    } catch (err) {
+      ids = [];
+    }
+    setPickedIds(ids);
+    if (ids[0]) setActiveId(ids[0]);
+  }, []);
+
+  useEffect(() => {
+    const ids = pickedIds.length ? pickedIds : selectedId ? [selectedId] : [];
     if (!ids.length) {
       setPhase("choose");
       setProduct(null);
@@ -200,7 +201,7 @@ export function FitmentApp({ mode, insideHost }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [selectedIds.join("|")]);
+  }, [pickedIds.join("|")]);
 
   useEffect(() => {
     if (!product) return;
@@ -450,9 +451,9 @@ export function FitmentApp({ mode, insideHost }) {
   const statuses = listing.verification_statuses || ["VERIFIED", "UNVERIFIED", "NEEDS_REVIEW"];
   const fitments = listing.fitments || [];
   const count = listing.count || fitments.length;
-  const Wrapper = insideHost ? Fragment : mode === "action" ? "s-admin-action" : "s-admin-block";
+  const Wrapper = mode === "action" ? "s-admin-action" : "s-admin-block";
   const wrapperHeading = i18n.translate("heading");
-  const actionProps = mode === "action" && !insideHost ? { loading: false, heading: wrapperHeading, ref: clearHostLoading } : {};
+  const actionProps = mode === "action" ? { loading: false, ref: clearHostLoading } : {};
 
   const provenance = (
     <s-stack gap="base">
@@ -523,7 +524,7 @@ export function FitmentApp({ mode, insideHost }) {
   );
 
   return (
-    <Wrapper {...(mode === "block" ? { heading: wrapperHeading } : {})} {...actionProps}>
+    <Wrapper heading={wrapperHeading} {...actionProps}>
       {mode === "action" ? (
         <s-button
           slot="primary-action"

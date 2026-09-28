@@ -202,8 +202,8 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   const block = source("extensions/car-fitment/src/Block.jsx");
   assert.match(action, /@shopify\/ui-extensions\/preact/);
   assert.doesNotMatch(action, /Loading car fitment/);
-  assert.match(action, /insideHost=\{Boolean\(shell\)\}/);
-  assert.match(action, /shell \|\| document\.body/);
+  assert.match(action, /render\(<FitmentGuard mode="action" \/>, document\.body\)/);
+  assert.match(action, /stale\[index\]\.remove\(\)/);
   assert.match(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
   assert.match(block, /@shopify\/ui-extensions\/preact/);
   const app = source("extensions/car-fitment/src/FitmentApp.jsx");

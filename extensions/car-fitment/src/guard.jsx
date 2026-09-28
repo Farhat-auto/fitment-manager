@@ -24,21 +24,18 @@ export class FitmentGuard extends Component {
   render() {
     if (this.state.error) {
       if (this.props.mode === "action") {
-        const errorBody = (
-          <>
+        return (
+          <s-admin-action heading="CAR FITMENT" loading={false}>
             <s-banner tone="critical">{this.state.error}</s-banner>
+            <s-link href="https://fitment-manager.vercel.app/fitment-application-template.csv" target="_blank">
+              Download import template
+            </s-link>
             <s-button slot="primary-action" onClick={closeAction}>
               Close
             </s-button>
             <s-button slot="secondary-actions" onClick={closeAction}>
               Cancel
             </s-button>
-          </>
-        );
-        if (this.props.insideHost) return errorBody;
-        return (
-          <s-admin-action heading="CAR FITMENT" loading={false}>
-            {errorBody}
           </s-admin-action>
         );
       }
@@ -48,6 +45,6 @@ export class FitmentGuard extends Component {
         </s-admin-block>
       );
     }
-    return <FitmentApp mode={this.props.mode} insideHost={this.props.insideHost} />;
+    return <FitmentApp mode={this.props.mode} />;
   }
 }
