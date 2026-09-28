@@ -28,6 +28,8 @@ assert.match(link, /\/article-create/);
 assert.match(link, /confirm: true/);
 assert.match(link, /catalogueArticleSku/);
 assert.match(link, /When the SKU is blank, the catalogue article uses the brand and MPN/);
+assert.match(link, /identityMatch/);
+assert.match(link, /A second article is not created/);
 assert.doesNotMatch(link, /disabled=\{!sku\}/);
 assert.match(link, /discovery evidence, not identity/);
 assert.match(proxy, /article-candidates/);

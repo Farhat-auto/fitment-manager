@@ -114,6 +114,7 @@ export function CatalogueArticleLink({
   }, [identity]);
 
   const catalogueSku = catalogueArticleSku(preview, sku, brand, mpn);
+  const identityMatch = candidates.some((row) => !row.discovery_only);
 
   const apply = async (path: string, extra: Record<string, unknown>) => {
     setBusy(true);
@@ -187,14 +188,16 @@ export function CatalogueArticleLink({
           <Text as="p" variant="bodySm">No catalogue article matches this SKU, Shopify id, or brand and MPN.</Text>
         )}
         <Text as="p" variant="bodySm">
-          Create a catalogue article for SKU {catalogueSku || "—"}, brand {preview?.brand || brand || "—"}, MPN {mpn || preview?.mpn || "none"}, article number {articleNumber || "none"}.
+          {identityMatch
+            ? "This brand and MPN already match a catalogue article. Map that article. A second article is not created."
+            : `Create a catalogue article for SKU ${catalogueSku || "—"}, brand ${preview?.brand || brand || "—"}, MPN ${mpn || preview?.mpn || "none"}, article number ${articleNumber || "none"}.`}
         </Text>
         {pending === "create" ? (
-          <Button variant="primary" loading={busy} disabled={!catalogueSku} onClick={() => apply("/article-create", {})}>
+          <Button variant="primary" loading={busy} disabled={!catalogueSku || identityMatch} onClick={() => apply("/article-create", {})}>
             Confirm create {catalogueSku}
           </Button>
         ) : (
-          <Button disabled={!catalogueSku || busy} onClick={() => setPending("create")}>
+          <Button disabled={!catalogueSku || identityMatch || busy} onClick={() => setPending("create")}>
             Create catalogue article
           </Button>
         )}
