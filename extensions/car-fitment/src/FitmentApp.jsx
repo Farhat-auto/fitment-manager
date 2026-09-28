@@ -1,4 +1,5 @@
 import "@shopify/ui-extensions/preact";
+import { Fragment } from "preact";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePages, cataloguePost, loadMakes } from "./api.js";
 import { PRODUCT_QUERY, productFromNode } from "./payload.js";
@@ -15,7 +16,9 @@ function qs(params) {
     .join("&");
 }
 
-export function FitmentApp({ mode }) {
+const TEMPLATE_URL = "https://fitment-manager.vercel.app/fitment-application-template.csv";
+
+export function FitmentApp({ mode, insideHost }) {
   const shop = typeof shopify === "undefined" ? {} : shopify || {};
   const close = typeof shop.close === "function" ? shop.close : null;
   let data = {};
@@ -447,9 +450,9 @@ export function FitmentApp({ mode }) {
   const statuses = listing.verification_statuses || ["VERIFIED", "UNVERIFIED", "NEEDS_REVIEW"];
   const fitments = listing.fitments || [];
   const count = listing.count || fitments.length;
-  const Wrapper = mode === "action" ? "s-admin-action" : "s-admin-block";
+  const Wrapper = insideHost ? Fragment : mode === "action" ? "s-admin-action" : "s-admin-block";
   const wrapperHeading = i18n.translate("heading");
-  const actionProps = mode === "action" ? { loading: false, ref: clearHostLoading } : {};
+  const actionProps = mode === "action" && !insideHost ? { loading: false, heading: wrapperHeading, ref: clearHostLoading } : {};
 
   const provenance = (
     <s-stack gap="base">
@@ -520,7 +523,7 @@ export function FitmentApp({ mode }) {
   );
 
   return (
-    <Wrapper heading={wrapperHeading} {...actionProps}>
+    <Wrapper {...(mode === "block" ? { heading: wrapperHeading } : {})} {...actionProps}>
       {mode === "action" ? (
         <s-button
           slot="primary-action"
@@ -557,6 +560,11 @@ export function FitmentApp({ mode }) {
       ) : null}
 
       <s-stack gap="base">
+        {mode === "action" ? (
+          <s-link href={TEMPLATE_URL} download="fitment-application-template.csv" target="_blank">
+            Download import template
+          </s-link>
+        ) : null}
         {products.length > 1 ? (
           <s-stack gap="small">
             <s-text>Selected Shopify products</s-text>

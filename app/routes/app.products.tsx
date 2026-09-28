@@ -962,6 +962,10 @@ export default function Products() {
       <BlockStack gap="400">
         <InlineStack align="end">
           <InlineStack gap="200">
+            <Button url="https://fitment-manager.vercel.app/fitment-application-template.csv" target="_blank">
+              Download import template
+            </Button>
+
             <Button onClick={exportSelected} disabled={isExporting} loading={isExporting}>
               Export CSV
             </Button>
