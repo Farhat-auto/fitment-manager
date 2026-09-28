@@ -33,6 +33,10 @@ assert.match(proxy, /article-map/);
 
 assert.match(product, /ItemClassification/);
 assert.match(product, /classification_options/);
+assert.match(product, /item_information/);
+assert.match(product, /Save item information|ItemInformation/);
+assert.match(product, /article_number/);
+assert.match(identity, /article_number/);
 assert.match(product, /classification_save/);
 assert.match(product, /Save item category|ItemClassification/);
 assert.match(identity, /catalog_subcategory/);
