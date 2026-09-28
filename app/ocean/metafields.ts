@@ -15,6 +15,18 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       verifiedKeys: metafield(namespace: "ocean", key: "verified_vehicle_keys") { value }
       fitmentKeys: metafield(namespace: "custom", key: "fitment_keys") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
+      catalogCategory: metafield(namespace: "custom", key: "catalog_main_category") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
+      catalogItemCategory: metafield(namespace: "custom", key: "catalog_system_group") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
+      catalogSubcategory: metafield(namespace: "custom", key: "catalog_subcategory") {
+        value
+        reference { ... on Metaobject { id displayName } }
+      }
       oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
       legacyVehicles: metafield(namespace: "fitment", key: "vehicles") { value }
       customVehicles: metafield(namespace: "custom", key: "compatible_vehicles") { value }

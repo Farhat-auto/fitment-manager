@@ -96,6 +96,21 @@ async function oceanPost(body: Record<string, unknown>) {
   return res.json();
 }
 
+async function oceanList(path: string, keys: string[]) {
+  const rows: Array<Record<string, unknown>> = [];
+  let offset = 0;
+  const limit = 250;
+  for (let page = 0; page < 40; page += 1) {
+    const joiner = path.includes("?") ? "&" : "?";
+    const payload = await oceanGet(`${path}${joiner}limit=${limit}&offset=${offset}`);
+    const batch = keys.map((key) => payload?.[key]).find((value) => Array.isArray(value)) || [];
+    rows.push(...batch);
+    if (!payload?.has_next || !batch.length) break;
+    offset += batch.length;
+  }
+  return rows;
+}
+
 export function CarFitmentPanel({
   article,
   initialListing,
@@ -112,8 +127,14 @@ export function CarFitmentPanel({
   const [status, setStatus] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [hits, setHits] = React.useState<VehicleRow[]>([]);
-  const [makes, setMakes] = React.useState<Array<{ id: string; name: string }>>([]);
-  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; type_count?: number }>>([]);
+  const [makes, setMakes] = React.useState<Array<{ id: string; name: string; type_count?: number }>>([]);
+  const [makesReady, setMakesReady] = React.useState(false);
+  const [pickedMakes, setPickedMakes] = React.useState<string[]>([]);
+  const [makeQuery, setMakeQuery] = React.useState("");
+  const [modelsBusy, setModelsBusy] = React.useState(false);
+  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; type_count?: number; make_id?: string; make_name?: string }>>([]);
+  const makesRef = React.useRef(makes);
+  makesRef.current = makes;
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
   const [engines, setEngines] = React.useState<VehicleRow[]>([]);
   const [makeId, setMakeId] = React.useState("");
@@ -164,6 +185,8 @@ export function CarFitmentPanel({
     setSide("");
     setNote("");
     setMakeId("");
+    setPickedMakes([]);
+    setMakeQuery("");
     setModelId("");
     setGenerationId("");
     setEngineId("");
@@ -175,9 +198,22 @@ export function CarFitmentPanel({
 
   React.useEffect(() => {
     reset();
-    oceanGet("/makes")
-      .then((payload) => setMakes(payload.makes || []))
-      .catch((err) => setError(String(err?.message || err)));
+    setMakesReady(false);
+    oceanList("/makes?has_vehicles=0", ["makes"])
+      .then((rows) => {
+        const next = rows.map((row) => ({
+          id: String(row.id || ""),
+          name: String(row.name || row.id || ""),
+          type_count: Number(row.type_count || 0),
+        })).filter((row) => row.id);
+        next.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+        setMakes(next);
+        setMakesReady(true);
+      })
+      .catch((err) => {
+        setMakesReady(true);
+        setError(String(err?.message || err));
+      });
     // Isolation: changing Shopify product ID wipes listing/search/checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article.numericId]);
@@ -204,34 +240,84 @@ export function CarFitmentPanel({
     [identity],
   );
 
-  const onMake = async (value: string) => {
-    setMakeId(value);
-    setModelId("");
-    setGenerationId("");
-    setEngineId("");
-    setModels([]);
-    setGenerations([]);
-    setEngines([]);
-    setChecked({});
-    if (!value) return;
-    const payload = await oceanGet("/models?make_id=" + encodeURIComponent(value));
-    const rows = ((payload.models || []) as Array<{ id: string; type_count?: number }>).slice();
-    rows.sort((left, right) => Number(right.type_count || 0) - Number(left.type_count || 0));
-    setModels(rows);
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!pickedMakes.length) {
+      setModels([]);
+      setModelsBusy(false);
+      return;
+    }
+    setModelsBusy(true);
+    const load = async () => {
+      const groups: Array<Array<Record<string, unknown>>> = [];
+      for (let index = 0; index < pickedMakes.length; index += 4) {
+        const chunk = pickedMakes.slice(index, index + 4);
+        const loaded = await Promise.all(chunk.map(async (id) => {
+          const rows = await oceanList(`/models?make_id=${encodeURIComponent(id)}&has_vehicles=0`, ["models"]);
+          const make = makesRef.current.find((row) => row.id === id);
+          return rows.map((row) => ({
+            ...row,
+            id: String(row.id || ""),
+            make_id: String(row.make_id || id),
+            make_name: make?.name || "",
+          }));
+        }));
+        groups.push(...loaded);
+      }
+      return groups.flat();
+    };
+    load()
+      .then((rows) => {
+        if (cancelled) return;
+        rows.sort((left, right) => {
+          const engines = Number(right.type_count || 0) - Number(left.type_count || 0);
+          if (engines) return engines;
+          const make = String(left.make_name || "").localeCompare(String(right.make_name || ""));
+          if (make) return make;
+          return String(left.name || left.title || "").localeCompare(String(right.name || right.title || ""));
+        });
+        setModels(rows as Array<{ id: string; name?: string; title?: string; type_count?: number; make_id?: string; make_name?: string }>);
+        setModelsBusy(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setModelsBusy(false);
+        setError(String(err?.message || err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickedMakes]);
+
+  const toggleMake = (id: string, on: boolean) => {
+    setPickedMakes((current) => (
+      on ? (current.includes(id) ? current : [...current, id]) : current.filter((item) => item !== id)
+    ));
+    if (!on && makeId === id) {
+      setMakeId("");
+      setModelId("");
+      setGenerationId("");
+      setEngineId("");
+      setGenerations([]);
+      setEngines([]);
+      setChecked({});
+    }
   };
 
   const onModel = async (value: string) => {
-    setModelId(value);
+    const [nextMake, nextModel] = String(value || "").split("|");
+    setMakeId(nextMake || "");
+    setModelId(nextModel || "");
     setGenerationId("");
     setEngineId("");
     setGenerations([]);
     setEngines([]);
     setChecked({});
-    if (!value || !makeId) return;
-    const gens = await oceanGet("/generations?" + qs({ make_id: makeId, model_id: value }));
-    setGenerations(gens.generations || []);
-    const payload = await oceanGet("/engines?" + qs({ make_id: makeId, model_id: value }));
-    setEngines(payload.engines || payload.types || []);
+    if (!nextMake || !nextModel) return;
+    const gens = await oceanList("/generations?" + qs({ make_id: nextMake, model_id: nextModel }), ["generations"]);
+    setGenerations(gens as Array<{ id: string; name: string; year_range?: string }>);
+    const rows = await oceanList("/engines?" + qs({ make_id: nextMake, model_id: nextModel }), ["engines", "types"]);
+    setEngines(rows as VehicleRow[]);
   };
 
   const onGeneration = async (value: string) => {
@@ -239,10 +325,11 @@ export function CarFitmentPanel({
     setEngineId("");
     setChecked({});
     if (!value || !makeId || !modelId) return;
-    const payload = await oceanGet(
+    const rows = await oceanList(
       "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value }),
+      ["engines", "types"],
     );
-    setEngines(payload.engines || payload.types || []);
+    setEngines(rows as VehicleRow[]);
   };
 
   const runSearch = async (value: string) => {
@@ -314,6 +401,28 @@ export function CarFitmentPanel({
     }
   };
 
+  const visibleMakes = makes.filter((row) => {
+    const query = makeQuery.trim().toLowerCase();
+    return !query || String(row.name || "").toLowerCase().includes(query);
+  });
+  const selectedMakeNames = pickedMakes
+    .map((id) => makes.find((row) => row.id === id)?.name || id)
+    .filter(Boolean);
+  const modelOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    const options = [{ label: "Select model", value: "" }];
+    models.forEach((row) => {
+      const value = `${row.make_id || ""}|${row.id}`;
+      if (!row.id || seen.has(value)) return;
+      seen.add(value);
+      const engines = Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : " · no engines";
+      options.push({
+        label: `${row.make_name ? `${row.make_name} · ` : ""}${row.name || row.title || row.id}${engines}`,
+        value,
+      });
+    });
+    return options;
+  }, [models]);
   const fitments = listing.fitments || [];
   const count = listing.count || fitments.length;
   const sources = listing.sources || [{ id: "manual", label: "Manual" }];
@@ -453,25 +562,42 @@ export function CarFitmentPanel({
                 />
               );
             })}
-            <Select
-              label="Make"
-              options={[{ label: "Select make", value: "" }, ...makes.map((row) => ({ label: row.name, value: row.id }))]}
-              value={makeId}
-              onChange={onMake}
+            <TextField
+              label="Find a make"
+              value={makeQuery}
+              placeholder="Mercedes, BMW, Audi"
+              autoComplete="off"
+              onChange={setMakeQuery}
+              helpText={`${makes.length} makes · ${pickedMakes.length} selected. Every catalogue make is listed, including makes that do not have engines yet.`}
             />
+            {selectedMakeNames.length ? (
+              <Text as="p" variant="bodySm">
+                Selected makes: {selectedMakeNames.join(", ")}
+              </Text>
+            ) : null}
+            <div style={{ maxHeight: 240, overflow: "auto" }}>
+              <BlockStack gap="100">
+                {visibleMakes.map((row) => (
+                  <Checkbox
+                    key={row.id}
+                    label={`${row.name}${Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : ""}`}
+                    checked={pickedMakes.includes(row.id)}
+                    onChange={(value) => toggleMake(row.id, value)}
+                  />
+                ))}
+              </BlockStack>
+            </div>
+            {!makesReady ? <Text as="p" variant="bodySm">Loading makes…</Text> : null}
+            {makesReady && !makes.length ? <Text as="p" variant="bodySm">No makes were returned.</Text> : null}
+            {makes.length && !visibleMakes.length ? (
+              <Text as="p" variant="bodySm">No make matches that name.</Text>
+            ) : null}
+            {modelsBusy ? <Text as="p" variant="bodySm">Loading models for the selected makes…</Text> : null}
             <Select
               label="Model"
-              disabled={!makeId}
-              options={[
-                { label: "Select model", value: "" },
-                ...models.map((row) => ({
-                  label: `${row.name || row.title || row.id}${
-                    Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : " · no engines"
-                  }`,
-                  value: row.id,
-                })),
-              ]}
-              value={modelId}
+              disabled={!pickedMakes.length || modelsBusy}
+              options={modelOptions}
+              value={makeId && modelId ? `${makeId}|${modelId}` : ""}
               onChange={onModel}
             />
             <Select
