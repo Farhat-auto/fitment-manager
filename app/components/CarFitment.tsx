@@ -72,6 +72,29 @@ type Article = {
   variantNumericId: string;
 };
 
+function compactText(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function engineChoiceLabel(row: VehicleRow) {
+  const code = String(row.engine_code || "").trim();
+  const base = String(row.checkbox_label || row.title || row.customer_label || row.detail || row.vehicle_key || row.id || "").trim();
+  if (!code) return base || "Engine";
+  if (compactText(base).includes(compactText(code))) return base;
+  return `${code} · ${base}`;
+}
+
+function matchesEngineQuery(row: VehicleRow, query: string) {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const blob = [
+    row.engine_code, row.engine, row.checkbox_label, row.title, row.detail,
+    row.make_name, row.model_name, row.generation_name, row.power_kw, row.year_range,
+  ].map((part) => String(part ?? "")).join(" ");
+  const compact = compactText(blob);
+  return tokens.every((token) => blob.toLowerCase().includes(token) || (compactText(token).length > 1 && compact.includes(compactText(token))));
+}
+
 function qs(params: Record<string, string | undefined>) {
   return Object.keys(params)
     .filter((key) => params[key])
@@ -127,6 +150,8 @@ export function CarFitmentPanel({
   const [error, setError] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [hitTotal, setHitTotal] = React.useState(0);
+  const [engineQuery, setEngineQuery] = React.useState("");
   const [hits, setHits] = React.useState<VehicleRow[]>([]);
   const [makes, setMakes] = React.useState<Array<{ id: string; name: string; type_count?: number }>>([]);
   const [makesReady, setMakesReady] = React.useState(false);
@@ -408,12 +433,22 @@ export function CarFitmentPanel({
 
   const runSearch = async (value: string) => {
     setSearch(value);
-    if (!value || value.trim().length < 2) {
+    const query = value.trim();
+    if (query.length < 2) {
       setHits([]);
+      setHitTotal(0);
       return;
     }
-    const payload = await oceanGet("/vehicle-search?q=" + encodeURIComponent(value));
-    setHits(payload.results || []);
+    try {
+      const payload = await oceanGet("/vehicle-search?q=" + encodeURIComponent(query) + "&limit=100");
+      const rows = Array.isArray(payload.results) ? payload.results : [];
+      setHits(rows);
+      setHitTotal(Number(payload.total || rows.length));
+    } catch (err) {
+      setHits([]);
+      setHitTotal(0);
+      setError(err instanceof Error ? err.message : "Engine search failed");
+    }
   };
 
   const engineKey = (row: VehicleRow) => String(row.vehicle_key || row.vehicle_id || row.id || "");
@@ -487,6 +522,7 @@ export function CarFitmentPanel({
     const label = `${row.make_name || ""} ${row.name || row.title || row.id}`.toLowerCase();
     return !query || label.includes(query);
   });
+  const visibleEngines = engines.filter((row) => matchesEngineQuery(row, engineQuery));
   const selectedModelNames = pickedModels.map((key) => {
     const row = models.find((item) => `${item.make_id || ""}|${item.id}` === key);
     if (!row) return "";
@@ -627,30 +663,42 @@ export function CarFitmentPanel({
         <Card>
           <BlockStack gap="300">
             <TextField
-              label="Search vehicles"
+              label="Search engine"
               value={search}
-              placeholder="E82 135i, N54B30A, BMW 335i 2008"
+              placeholder="274.920, M 274.920, W205 274.920"
               autoComplete="off"
+              helpText="Type an engine code. 274.920 matches M 274.920. Add the chassis when you want one car, for example W205 274.920."
               onChange={runSearch}
             />
-            {hits.map((row) => {
-              const key = String(row.vehicle_id || row.vehicle_key || row.id);
-              return (
-                <Checkbox
-                  key={key}
-                  label={row.checkbox_label || row.title || row.customer_label || key}
-                  checked={!!checked[key]}
-                  onChange={(val) =>
-                    setChecked((current) => {
-                      const next = { ...current };
-                      if (val) next[key] = true;
-                      else delete next[key];
-                      return next;
-                    })
-                  }
-                />
-              );
-            })}
+            {search.trim().length >= 2 ? (
+              <Text as="p" variant="bodySm">
+                {hitTotal
+                  ? `${hitTotal} engine${hitTotal === 1 ? "" : "s"} match ${search.trim()}${hitTotal > hits.length ? `. Showing ${hits.length}.` : "."}`
+                  : `No engine matches ${search.trim()}.`}
+              </Text>
+            ) : null}
+            <div style={{ maxHeight: hits.length ? 280 : undefined, overflow: "auto" }}>
+              <BlockStack gap="100">
+                {hits.map((row) => {
+                  const key = String(row.vehicle_id || row.vehicle_key || row.id);
+                  return (
+                    <Checkbox
+                      key={key}
+                      label={engineChoiceLabel(row)}
+                      checked={!!checked[key]}
+                      onChange={(val) =>
+                        setChecked((current) => {
+                          const next = { ...current };
+                          if (val) next[key] = true;
+                          else delete next[key];
+                          return next;
+                        })
+                      }
+                    />
+                  );
+                })}
+              </BlockStack>
+            </div>
             <TextField
               label="Find a make"
               value={makeQuery}
@@ -737,13 +785,22 @@ export function CarFitmentPanel({
               onChange={onGeneration}
             />
             {enginesBusy ? <Text as="p" variant="bodySm">Loading engines for the selected models…</Text> : null}
+            <TextField
+              label="Find an engine"
+              value={engineQuery}
+              placeholder="274.920"
+              autoComplete="off"
+              disabled={!engines.length}
+              helpText={engines.length ? `${visibleEngines.length} of ${engines.length} engines shown.` : "Select a model to list its engines, or use Search engine above."}
+              onChange={setEngineQuery}
+            />
             <InlineStack gap="200">
               <Button
-                disabled={!engines.length}
+                disabled={!visibleEngines.length}
                 onClick={() =>
                   setChecked((current) => {
                     const next = { ...current };
-                    engines.forEach((row) => {
+                    visibleEngines.forEach((row) => {
                       const key = engineKey(row);
                       if (key) next[key] = true;
                     });
@@ -751,13 +808,13 @@ export function CarFitmentPanel({
                   })
                 }
               >
-                Select all engines
+                Select shown engines
               </Button>
               <Button disabled={!engines.length} onClick={() => setChecked({})}>
                 Clear engines
               </Button>
             </InlineStack>
-            {engines.map((row) => {
+            {visibleEngines.map((row) => {
               const key = engineKey(row);
               const prefix = [row.make_name, row.model_name].filter(Boolean).join(" · ");
               const detail = [
@@ -768,7 +825,7 @@ export function CarFitmentPanel({
               ]
                 .filter(Boolean)
                 .join(" · ");
-              const label = [prefix, row.checkbox_label || detail].filter(Boolean).join(" · ") || key;
+              const label = engineChoiceLabel({ ...row, checkbox_label: [prefix, row.checkbox_label || detail].filter(Boolean).join(" · ") || key });
               return (
                 <Checkbox
                   key={key}
