@@ -5,7 +5,7 @@ import { Banner, BlockStack, Button, Card, DropZone, IndexTable, InlineStack, Pa
 import * as React from "react";
 import { authenticate } from "../shopify.server";
 import { oceanPost } from "../ocean/client.server";
-import { applicationBatchCsv, issueReportCsv, parseApplicationCsv, type ApplicationIssue, type ApplicationRecord } from "../fitment/applicationCsv";
+import { applicationBatchCsv, exampleCsv, issueReportCsv, parseApplicationCsv, templateCsv, type ApplicationIssue, type ApplicationRecord } from "../fitment/applicationCsv";
 
 const BATCH_SIZE = 100;
 const MAX_BATCH_BYTES = 512_000;
@@ -43,16 +43,16 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-function downloadReport(issues: ApplicationIssue[]) {
-  const url = URL.createObjectURL(new Blob([issueReportCsv(issues)], { type: "text/csv;charset=utf-8" }));
+function downloadCsv(filename: string, body: string) {
+  const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "fitment-import-errors.csv";
+  link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-type Result = { ok?: boolean; error?: string; batch_token?: string; imported?: number; verified_count?: number; results?: Array<Record<string, unknown>> };
+type Result = { ok?: boolean; error?: string; detail?: string; batch_token?: string; imported?: number; verified_count?: number; results?: Array<Record<string, unknown>> };
 
 export default function ApplicationImport() {
   const fetcher = useFetcher<typeof action>();
@@ -96,7 +96,8 @@ export default function ApplicationImport() {
     if (!active || fetcher.state !== "idle" || result?.batch_token !== active.token) return;
     current.current = null;
     if (result.ok === false || result.error) {
-      setBatchError(`Stopped at CSV row ${active.rows[0].line}: ${text(result.error) || "Import failed"}. Resume retries this batch.`);
+      const reason = [text(result.error), text(result.detail)].filter(Boolean).join(": ") || "Import failed";
+      setBatchError(`Stopped at CSV row ${active.rows[0].line}: ${reason}. Resume retries this batch.`);
       runningRef.current = false; setRunning(false);
       return;
     }
@@ -108,7 +109,11 @@ export default function ApplicationImport() {
     }
     const failures: ApplicationIssue[] = (Array.isArray(result.results) ? result.results : []).flatMap((row, index) => {
       if (row.ok !== false && !row.error && !row.block_reason) return [];
-      return [{ line: active.rows[index]?.line ?? active.rows[0].line, error: text(row.error || row.block_reason) || "Rejected by catalogue" }];
+      return [{
+        line: active.rows[index]?.line ?? active.rows[0].line,
+        error: text(row.error || row.block_reason) || "Rejected by catalogue",
+        values: active.rows[index]?.values,
+      }];
     });
     if (failures.length) setServerIssues((prev) => [...prev, ...failures]);
     if (count < active.rows.length && failures.length < active.rows.length - count) {
@@ -150,15 +155,27 @@ export default function ApplicationImport() {
   return (
     <Page title="Import application data" primaryAction={{ content: processed ? "Resume import" : "Import valid rows", onAction: start, disabled: running || !records.length || !source.trim() || !sourceFile.trim(), loading: running }}>
       <BlockStack gap="400">
-        <Banner tone="info" title="Use the application template">
-          <p>One row links one article to one exact vehicle. Download the <a href="/fitment-application-template.csv" download>CSV template</a> and keep its column names. Supply SKU, brand plus MPN, or a unique OE number; use a canonical ovh- vehicle key or complete make, model, generation, engine and power. Include application evidence and name the supplier or manufacturer as the source. New claims are reviewed by the catalogue service; a CSV does not itself prove compatibility.</p>
-        </Banner>
-        <Banner tone="warning" title="Older exports need conversion">
-          <p>The older “Export CSV” file contains Shopify vehicle GIDs and legacy vehicle keys. Those are not canonical ovh- keys. Match them to exact canonical vehicles and provide application evidence before using this template. Product-only rows have no fitment to import.</p>
-        </Banner>
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">Download import template</Text>
+            <InlineStack gap="200">
+              <Button onClick={() => downloadCsv("fitment-application-template.csv", templateCsv())}>Download import template</Button>
+              <Button onClick={() => downloadCsv("fitment-application-example.csv", exampleCsv())}>Download example</Button>
+            </InlineStack>
+            <Text as="h3" variant="headingSm">Required fields</Text>
+            <Text as="p">Each row needs one product, one exact vehicle, and an application statement. Identify the product with Product SKU, or with Brand and Manufacturer part number together, or with an OE number. An OE equality match only finds the article. It is not an application and it is not imported as verified compatibility. Set Evidence type to application and quote the supplier or manufacturer statement in Evidence. Type the supplier or manufacturer name in Source before you upload.</Text>
+            <Text as="h3" variant="headingSm">One product–vehicle application per row</Text>
+            <Text as="p">One row is one product on one exact vehicle. A product that fits three vehicles needs three rows. Do not put several vehicles in one cell.</Text>
+            <Text as="h3" variant="headingSm">How to identify the exact vehicle</Text>
+            <Text as="p">Use the canonical vehicle key from Fitment Manager. It starts with ovh-. When you do not have that key, fill Make, Model, Generation, Engine code, and Power kW together. Year from and Year to are optional. Leave Source status empty unless the supplier file itself says the application is verified. An empty status stays unverified.</Text>
+            <Banner tone="warning" title="The old fitment export is not this template">
+              <p>fitment-export.csv uses Shopify product IDs and legacy vehicle IDs. Those files are refused. Legacy vehicle IDs and OE matches are not turned into verified compatibility. The example file is separate and is marked EXAMPLE-DO-NOT-IMPORT, so example rows cannot be imported by mistake. Download the blank template and enter your own applications.</p>
+            </Banner>
+          </BlockStack>
+        </Card>
         <Card><BlockStack gap="300">
-          <Text as="h2" variant="headingMd">1. Prepare and upload</Text>
-          <Text as="p">Import files with more than 5,000 rows. The app sends 100 valid rows at a time and shows progress. Invalid rows are skipped and can be downloaded as a report.</Text>
+          <Text as="h2" variant="headingMd">1. Upload one file</Text>
+          <Text as="p">Upload one CSV, including a file with more than 5,000 rows. Valid rows are sent 100 at a time, with progress. Rejected rows stay out of the catalogue and can be downloaded.</Text>
           <TextField label="Source (supplier or manufacturer)" value={source} onChange={setSource} autoComplete="off" disabled={running} />
           <TextField label="Source file" value={sourceFile} onChange={setSourceFile} autoComplete="off" disabled={running} helpText="Filled from the uploaded filename; edit if the supplier file has a different name." />
           <DropZone accept=".csv,text/csv" type="file" allowMultiple={false} disabled={running} onDrop={(_files, accepted) => { if (accepted[0]) void loadFile(accepted[0]); }}><DropZone.FileUpload /></DropZone>
@@ -169,8 +186,8 @@ export default function ApplicationImport() {
           <Text as="p">{sourceFile || "No file selected"} · {records.length} valid rows · {issues.length} rows to fix</Text>
           {issues.length ? <Text as="p" tone="critical">Invalid rows will not be sent. Download the report to correct them and upload the file again.</Text> : null}
           {batchError ? <Banner tone="critical"><p>{batchError}</p></Banner> : null}
-          {(running || processed > 0) ? <><ProgressBar progress={records.length ? Math.round(processed / records.length * 100) : 0} /><Text as="p">{processed} / {records.length} processed · {imported} imported · {verified} verified by source evidence</Text></> : null}
-          <InlineStack gap="200"><Button onClick={start} variant="primary" disabled={running || !records.length || !source.trim() || !sourceFile.trim()} loading={running}>{processed ? "Resume import" : "Import valid rows"}</Button>{allIssues.length ? <Button onClick={() => downloadReport(allIssues)}>Download error report ({allIssues.length})</Button> : null}</InlineStack>
+          {(running || processed > 0) ? <><ProgressBar progress={records.length ? Math.round(processed / records.length * 100) : 0} /><Text as="p">{processed} / {records.length} processed · {imported} imported · {verified} already verified in the catalogue</Text></> : null}
+          <InlineStack gap="200"><Button onClick={start} variant="primary" disabled={running || !records.length || !source.trim() || !sourceFile.trim()} loading={running}>{processed ? "Resume import" : "Import valid rows"}</Button>{allIssues.length ? <Button onClick={() => downloadCsv("fitment-import-rejected.csv", issueReportCsv(allIssues))}>Download rejected rows ({allIssues.length})</Button> : null}</InlineStack>
           {records.length > 0 ? <><Text as="h3" variant="headingSm">First 20 valid rows</Text><IndexTable resourceName={{ singular: "row", plural: "rows" }} itemCount={Math.min(records.length, 20)} selectable={false} headings={[{ title: "CSV line" }, { title: "Article" }, { title: "Vehicle" }, { title: "Evidence" }]}>{records.slice(0, 20).map((row, i) => <IndexTable.Row id={String(row.line)} key={row.line} position={i}><IndexTable.Cell>{row.line}</IndexTable.Cell><IndexTable.Cell>{row.values.sku || [row.values.brand, row.values.mpn].filter(Boolean).join(" ") || row.values.oe_number}</IndexTable.Cell><IndexTable.Cell>{row.values.vehicle_key || `${row.values.make} ${row.values.model} ${row.values.engine}`}</IndexTable.Cell><IndexTable.Cell>{row.values.evidence_type}</IndexTable.Cell></IndexTable.Row>)}</IndexTable></> : null}
         </BlockStack></Card>
       </BlockStack>

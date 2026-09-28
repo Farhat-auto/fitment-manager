@@ -1,16 +1,32 @@
 # Application CSV import
 
-Download `public/fitment-application-template.csv` from the app's **Import application data** page. Keep the first row unchanged; add one article and one exact vehicle per row. A product that fits three vehicles needs three rows. Save as UTF-8 CSV. Quoted commas and line breaks in evidence are supported.
+On **Import application data**, click **Download import template** before choosing a file. The template is a header row only. Keep those column names. Add one product and one exact vehicle per row. A product that fits three vehicles needs three rows. Save as UTF-8 CSV. Quoted commas and line breaks in Evidence are supported.
 
-| Columns | What to enter |
+**Download example** is a separate file. It is marked `EXAMPLE-DO-NOT-IMPORT`. The importer refuses the whole file, so example rows cannot be imported by mistake.
+
+## Required fields
+
+| Column | What to enter |
 | --- | --- |
-| `sku`, `brand`, `mpn`, `oe_number` | Identify the article by SKU, brand and MPN, or a unique OE number. An OE match alone is not evidence of fitment. |
-| `vehicle_key` | Canonical `ovh-` vehicle key, when known. Legacy Shopify vehicle GIDs and descriptive vehicle keys are not accepted. |
-| `make`, `model`, `generation`, `engine`, `power_kw` | Required together when a canonical vehicle key is not supplied. An ambiguous match remains unverified. |
-| `year_from`, `year_to` | Optional year boundaries from the source. |
-| `evidence_type`, `evidence_value` | Use `application` for a supplier application statement and cite the exact evidence. Do not label an OE cross-reference as an application. |
-| `source_state`, `source_ref` | The source's stated status and a traceable reference, if provided. Leave source_state empty for unverified claims. |
+| Product SKU, Brand, Manufacturer part number, OE number | Identify the product by Product SKU, or by Brand and Manufacturer part number together, or by an OE number. An OE equality match finds the article only. It is not an application and it is not verified compatibility. |
+| Canonical vehicle key | The Fitment Manager key starting with `ovh-`, when you have it. A Shopify vehicle ID or a descriptive key is rejected. |
+| Make, Model, Generation, Engine code, Power kW | Required together when the canonical vehicle key is empty. All five identify one exact vehicle. |
+| Year from, Year to | Optional years from the source. |
+| Evidence type, Evidence | Use `application` and quote the supplier or manufacturer statement. An OE number, cross-reference, MPN, or title is rejected and is not imported as verified compatibility. |
+| Source status, Source reference | Leave Source status empty unless the supplier file itself says the application is verified. An empty status stays unverified. Source reference is your trace back to the statement. |
 
-Enter a supplier or manufacturer in the **Source** field. The importer validates rows locally, skips rows missing identifiers or evidence type, and sends valid rows in batches of 100. Files with more than 5,000 rows are accepted up to 50 MB. Progress and a downloadable error report are shown. A paused import can resume at its next unconfirmed batch; if a request failed after reaching the server, check the catalogue before retrying that batch.
+Type the supplier or manufacturer in **Source** on the page.
 
-The old `fitment-export.csv` describes Shopify product and vehicle metaobjects. It cannot safely be imported into the canonical application service unchanged. Match those vehicle descriptions to exact canonical vehicles and obtain application evidence before preparing the new file. Rows without vehicle information describe products only and are not application records.
+## One product–vehicle application per row
+
+Each row is one product on one exact vehicle. Do not combine vehicles in one cell.
+
+## How to identify the exact vehicle
+
+Use the canonical `ovh-` vehicle key from Fitment Manager. When that key is not available, fill Make, Model, Generation, Engine code, and Power kW together. An ambiguous vehicle is not saved as verified compatibility.
+
+## Upload
+
+The page accepts one CSV of more than 5,000 rows, up to 50 MB. It checks every row locally, skips rejected rows, and sends valid rows in batches of 100. Progress stays on the page. **Download rejected rows** saves the line, the reason, and the product and vehicle fields from each rejected row. A stopped import resumes at the next unconfirmed batch.
+
+`fitment-export.csv` is the old Shopify vehicle-link export. It is not this template. The importer refuses `product_id` and `vehicle_gid` files. Legacy vehicle IDs and OE matches are not turned into verified compatibility.

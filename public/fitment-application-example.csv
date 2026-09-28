@@ -1,0 +1,2 @@
+Product SKU,Brand,Manufacturer part number,OE number,Canonical vehicle key,Make,Model,Generation,Engine code,Power kW,Year from,Year to,Evidence type,Evidence,Source status,Source reference
+EXAMPLE-SKU,Example Brand,EXAMPLE-MPN,,,Mercedes-Benz,C-Class,W205,M 274.920,135,2013,2018,application,Example only. A supplier catalogue states this part fits this exact engine. Do not upload this file.,,EXAMPLE-DO-NOT-IMPORT
