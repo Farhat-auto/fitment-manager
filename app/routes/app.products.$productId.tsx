@@ -4,7 +4,9 @@ import { Link, useLoaderData, useLocation, useNavigate } from "@remix-run/react"
 import { Badge, Banner, BlockStack, Button, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
+import { ItemClassification } from "../components/ItemClassification";
 import { oceanGet, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
+import { loadItemClassificationOptions, saveItemClassification } from "../ocean/itemClassification.server";
 import { stableIdentity } from "../ocean/identity";
 import { catalogueFitmentMetafields, verifiedVehicleKeys, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
 import { odooUrl, shopifyAdminUrl, storefrontUrl } from "../ocean/product-link";
@@ -32,6 +34,24 @@ function toShopifyProductGid(rawProductId: string): { gid: string; numericId: st
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function classificationFromNode(node: any) {
+  const read = (field: any) => ({
+    id: text(field?.reference?.id || field?.value),
+    label: text(field?.reference?.displayName),
+  });
+  const category = read(node?.catalogCategory);
+  const itemCategory = read(node?.catalogItemCategory);
+  const subcategory = read(node?.catalogSubcategory);
+  return {
+    categoryId: category.id,
+    categoryLabel: category.label,
+    itemCategoryId: itemCategory.id,
+    itemCategoryLabel: itemCategory.label,
+    subcategoryId: subcategory.id,
+    subcategoryLabel: subcategory.label,
+  };
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -127,14 +147,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       brand: String(catalogue.brand || oceanArticle.brand || article.vendor || ""),
       mpn: String(catalogue.mpn || oceanArticle.mpn || article.mpn || ""),
     },
+    classification: classificationFromNode(node),
     ocean_endpoint: "/ocean-catalogue-manager/shopify-admin/product-fitment",
   });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const { gid, numericId } = toShopifyProductGid(normalizeProductId(params.productId ?? ""));
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const intent = text(body.intent);
+  if (intent === "classification_options") {
+    return json(await loadItemClassificationOptions(admin, text(session?.shop)));
+  }
+  if (intent === "classification_save") {
+    const result = await saveItemClassification(admin, gid, {
+      category: text(body.category),
+      itemCategory: text(body.itemCategory),
+      subcategory: text(body.subcategory),
+    });
+    return json(result, { status: result.ok ? 200 : 400 });
+  }
   const payload = await oceanProductFitmentPost({
     ...body,
     shopify_product_id: numericId,
@@ -176,7 +209,7 @@ function integrationMark(value: string) {
 
 export default function ProductCarFitment() {
   const data = useLoaderData<typeof loader>();
-  const { article, listing, review, imageUrl, shopifyFitment, taxonomy, link, shopify, odooLink, catalogueSku, reviewSku } = data;
+  const { article, listing, review, imageUrl, shopifyFitment, taxonomy, classification, link, shopify, odooLink, catalogueSku, reviewSku } = data;
   const navigate = useNavigate();
   const location = useLocation();
   const mapped = Boolean(article.numericId && (article.sku || article.vendor));
@@ -292,6 +325,7 @@ export default function ProductCarFitment() {
             <Text as="p" tone="subdued">Evidence stays on Fitment Review. OE numbers are not application proof. Title is not identity.</Text>
           </BlockStack>
         </Card>
+        <ItemClassification productGid={article.id} initial={classification} />
         {!mapped ? (
           <Banner tone="warning">
             No mapping. Fitment: 0 vehicles / unmapped. Resolve Shopify product ID, variant ID, SKU, or
