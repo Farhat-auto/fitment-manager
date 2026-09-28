@@ -1,16 +1,18 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData, useLocation, useNavigate } from "@remix-run/react";
+import { Link, useLoaderData, useLocation, useNavigate, useRevalidator } from "@remix-run/react";
 import { Badge, Banner, BlockStack, Button, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
 import { ItemClassification } from "../components/ItemClassification";
+import { ItemInformation } from "../components/ItemInformation";
 import { oceanGet, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { loadItemClassificationOptions, saveItemClassification } from "../ocean/itemClassification.server";
 import { stableIdentity } from "../ocean/identity";
 import { catalogueFitmentMetafields, verifiedVehicleKeys, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
 import { odooUrl, shopifyAdminUrl, storefrontUrl } from "../ocean/product-link";
 import { appHref } from "../embedded-nav";
+import { normalizeOeReferenceLinesFromForm } from "../utils/oeReferences";
 
 function normalizeProductId(raw: string): string {
   const value = String(raw || "").trim();
@@ -34,6 +36,22 @@ function toShopifyProductGid(rawProductId: string): { gid: string; numericId: st
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function linesFromMetafield(field: { value?: string; jsonValue?: unknown } | null | undefined) {
+  const jsonValue = field?.jsonValue;
+  if (Array.isArray(jsonValue)) return jsonValue.map((item) => text(item)).filter(Boolean).join("\n");
+  const raw = text(field?.value);
+  if (!raw) return "";
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((item) => text(item)).filter(Boolean).join("\n");
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 function classificationFromNode(node: any) {
@@ -148,6 +166,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       mpn: String(catalogue.mpn || oceanArticle.mpn || article.mpn || ""),
     },
     classification: classificationFromNode(node),
+    item: {
+      mpn: article.mpn,
+      articleNumber: text(node?.articleNumber?.value),
+      oe: linesFromMetafield(node?.oeRefs),
+      cross: linesFromMetafield(node?.crossRefs),
+    },
     ocean_endpoint: "/ocean-catalogue-manager/shopify-admin/product-fitment",
   });
 }
@@ -159,6 +183,38 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = text(body.intent);
   if (intent === "classification_options") {
     return json(await loadItemClassificationOptions(admin, text(session?.shop)));
+  }
+  if (intent === "item_information") {
+    if (!gid) return json({ ok: false, saved: false, error: "Missing product." }, { status: 400 });
+    const mpn = text(body.mpn);
+    const articleNumber = text(body.articleNumber);
+    const oe = normalizeOeReferenceLinesFromForm(body.oe);
+    const cross = text(body.cross).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const resp = await admin.graphql(METAFIELDS_SET, {
+      variables: {
+        metafields: [
+          { ownerId: gid, namespace: "custom", key: "mpn", type: "single_line_text_field", value: mpn },
+          { ownerId: gid, namespace: "custom", key: "article_number", type: "single_line_text_field", value: articleNumber },
+          { ownerId: gid, namespace: "custom", key: "oe_references", type: "list.single_line_text_field", value: JSON.stringify(oe) },
+          { ownerId: gid, namespace: "custom", key: "cross_references", type: "list.single_line_text_field", value: JSON.stringify(cross) },
+        ],
+      },
+    });
+    const data = await resp.json() as { errors?: Array<{ message?: string }>; data?: { metafieldsSet?: { userErrors?: Array<{ message?: string }> } } };
+    const topErrors = Array.isArray(data?.errors) ? data.errors : [];
+    const userErrors = data?.data?.metafieldsSet?.userErrors ?? [];
+    if (topErrors.length || (Array.isArray(userErrors) && userErrors.length) || !data?.data?.metafieldsSet) {
+      const message = [...topErrors, ...(Array.isArray(userErrors) ? userErrors : [])]
+        .map((row: { message?: string }) => text(row?.message))
+        .filter(Boolean)
+        .join("; ");
+      return json({
+        ok: false,
+        saved: false,
+        error: message || "Shopify did not accept the item information.",
+      }, { status: 400 });
+    }
+    return json({ ok: true, saved: true });
   }
   if (intent === "classification_save") {
     const result = await saveItemClassification(admin, gid, {
@@ -209,9 +265,10 @@ function integrationMark(value: string) {
 
 export default function ProductCarFitment() {
   const data = useLoaderData<typeof loader>();
-  const { article, listing, review, imageUrl, shopifyFitment, taxonomy, classification, link, shopify, odooLink, catalogueSku, reviewSku } = data;
+  const { article, listing, review, imageUrl, shopifyFitment, taxonomy, classification, item, link, shopify, odooLink, catalogueSku, reviewSku } = data;
   const navigate = useNavigate();
   const location = useLocation();
+  const revalidator = useRevalidator();
   const mapped = Boolean(article.numericId && (article.sku || article.vendor));
   const reviewOk = Boolean(review && (review as { ok?: boolean }).ok);
   const loaded = reviewOk ? (review as {
@@ -225,7 +282,11 @@ export default function ProductCarFitment() {
     mpn?: string;
     error?: string;
   }) : null;
-  const reviewError = reviewOk ? "" : String((review as { error?: string } | null)?.error || "Fitment review failed.");
+  const reviewError = reviewOk
+    ? ""
+    : String((review as { error?: string } | null)?.error || "") === "product_not_found"
+      ? "No catalogue article exists for this SKU yet. Save the item information and create the catalogue article, then fitment review can open."
+      : String((review as { error?: string } | null)?.error || "Fitment review failed.");
   const linkError = link && link.ok === false ? String(link.error || "Product link failed.") : "";
   const labels = Array.isArray(link?.labels) ? link.labels.map((item: unknown) => String(item)) : [];
   const fitment = (link?.fitment || {}) as Record<string, number>;
@@ -279,6 +340,7 @@ export default function ProductCarFitment() {
             {odoo.internal_reference_error ? <Text as="p" tone="subdued">{odoo.internal_reference_error}</Text> : null}
             <Text as="p">Barcode {odoo.barcode || article.barcode || "—"} · category {odoo.category || taxonomy.category || "—"} · company {odoo.company || "—"}</Text>
             <Text as="p">Stock {odoo.stock || "—"}</Text>
+            <Text as="p" tone="subdued">The Odoo button appears when this catalogue article has an Odoo template id.</Text>
             <ExternalAction href={odooLink.url} label="Open Odoo" error={odooLink.error} />
           </BlockStack>
         </Card>
@@ -289,10 +351,26 @@ export default function ProductCarFitment() {
             <Text as="p">OE {oe}</Text>
             <Text as="p">Cross references {cross}</Text>
             <Text as="p">Assembly {taxonomy.assembly || "—"} · Category {taxonomy.category || "—"} · Product group {taxonomy.productGroup || "—"}</Text>
+            <ItemInformation
+              productGid={article.id}
+              shopifyProductId={article.numericId}
+              shopifyVariantId={article.variantNumericId}
+              sku={article.sku}
+              brand={article.vendor}
+              barcode={article.barcode}
+              handle={article.handle}
+              initialMpn={item.mpn}
+              initialArticleNumber={item.articleNumber}
+              initialOe={item.oe}
+              initialCross={item.cross}
+              unmapped={Boolean((listing as { unmapped?: boolean } | null)?.unmapped) || !catalogueSku}
+              onLinked={() => revalidator.revalidate()}
+            />
+            <ItemClassification productGid={article.id} initial={classification} />
             {catalogueHref ? (
               <Link to={catalogueHref} style={{ textDecoration: "none" }}><Button>Open Catalogue Record</Button></Link>
             ) : (
-              <Text as="p" tone="critical">Open Catalogue Record failed: CATALOGUE LINK MISSING</Text>
+              <Text as="p" tone="critical">CATALOGUE LINK MISSING. Enter the MPN and article number above, then create or map the article.</Text>
             )}
           </BlockStack>
         </Card>
@@ -325,7 +403,6 @@ export default function ProductCarFitment() {
             <Text as="p" tone="subdued">Evidence stays on Fitment Review. OE numbers are not application proof. Title is not identity.</Text>
           </BlockStack>
         </Card>
-        <ItemClassification productGid={article.id} initial={classification} />
         {!mapped ? (
           <Banner tone="warning">
             No mapping. Fitment: 0 vehicles / unmapped. Resolve Shopify product ID, variant ID, SKU, or

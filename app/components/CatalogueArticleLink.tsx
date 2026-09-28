@@ -53,6 +53,8 @@ export function CatalogueArticleLink({
   mpn,
   barcode,
   handle,
+  articleNumber,
+  oeText,
   onLinked,
 }: {
   shopifyProductId: string;
@@ -62,6 +64,8 @@ export function CatalogueArticleLink({
   mpn: string;
   barcode: string;
   handle: string;
+  articleNumber?: string;
+  oeText?: string;
   onLinked: (listing: Record<string, unknown>) => void;
 }) {
   const [candidates, setCandidates] = React.useState<Candidate[]>([]);
@@ -109,6 +113,11 @@ export function CatalogueArticleLink({
       ...extra,
       confirm: true,
       mapped_by: "fitment-manager-staff",
+      article_number: articleNumber || "",
+      oe_references: String(oeText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
     });
     setBusy(false);
     if (!payload || payload.ok === false || payload.applied !== true) {
@@ -168,7 +177,7 @@ export function CatalogueArticleLink({
           <Text as="p" variant="bodySm">No catalogue article matches this SKU, Shopify id, or brand and MPN.</Text>
         )}
         <Text as="p" variant="bodySm">
-          Create a catalogue article for SKU {preview?.sku || sku || "—"}, brand {preview?.brand || brand || "—"}, MPN {preview?.mpn || mpn || "none"}.
+          Create a catalogue article for SKU {preview?.sku || sku || "—"}, brand {preview?.brand || brand || "—"}, MPN {mpn || preview?.mpn || "none"}, article number {articleNumber || "none"}.
         </Text>
         {pending === "create" ? (
           <Button variant="primary" loading={busy} disabled={!sku} onClick={() => apply("/article-create", {})}>

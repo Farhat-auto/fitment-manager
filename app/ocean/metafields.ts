@@ -15,6 +15,8 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       verifiedKeys: metafield(namespace: "ocean", key: "verified_vehicle_keys") { value }
       fitmentKeys: metafield(namespace: "custom", key: "fitment_keys") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
+      articleNumber: metafield(namespace: "custom", key: "article_number") { value }
+      crossRefs: metafield(namespace: "custom", key: "cross_references") { value }
       catalogCategory: metafield(namespace: "custom", key: "catalog_main_category") {
         value
         reference { ... on Metaobject { id displayName } }
