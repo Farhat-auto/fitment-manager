@@ -179,7 +179,14 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   assert.doesNotMatch(payload, /vehicle_fitment/);
   const toml = source("extensions/car-fitment/shopify.extension.toml");
   assert.match(toml, /admin.product-details.block.render/);
-  assert.match(toml, /admin.product-index.selection-action.render/);
+  assert.doesNotMatch(toml, /admin.product-index.action.render/);
+  const index = source("extensions/car-fitment-index/shopify.extension.toml");
+  assert.match(index, /admin.product-index.action.render/);
+  assert.match(index, /9ff4b93f-9764-80f5-5645-648f40c0968790d16581/);
+  const bulk = source("extensions/car-fitment-bulk/shopify.extension.toml");
+  assert.match(bulk, /admin.product-index.selection-action.render/);
+  assert.match(bulk, /4130cb4c-2d0b-cde5-d1de-06c064360c720b8d414e/);
+  assert.match(source("extensions/car-fitment-index/src/Action.jsx"), /@shopify\/ui-extensions\/preact/);
   const locales = source("extensions/car-fitment/locales/en.default.json");
   assert.match(locales, /Ocean Catalogue \/ CAR FITMENT/);
   assert.match(locales, /Select one or more products, then open CAR FITMENT/);
