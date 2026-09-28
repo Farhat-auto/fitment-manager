@@ -1,7 +1,1 @@
-import "@shopify/ui-extensions/preact";
-import { render } from "preact";
-import { FitmentGuard } from "../../car-fitment/src/guard.jsx";
-
-export default async () => {
-  render(<FitmentGuard mode="action" />, document.body);
-};
+export { default } from "../../car-fitment/src/mount-action.jsx";
