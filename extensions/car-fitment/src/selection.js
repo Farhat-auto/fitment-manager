@@ -1,7 +1,10 @@
 function readList(value) {
   if (value && typeof value.peek === "function") {
     try {
-      return readList(value.peek());
+      // .value subscribes through shopify.setSignals. peek() does not, so a
+      // selection that arrives after the first paint would stay invisible.
+      const next = "value" in value ? value.value : value.peek();
+      return readList(next);
     } catch (err) {
       return [];
     }

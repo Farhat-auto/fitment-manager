@@ -191,6 +191,7 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   assert.doesNotMatch(indexEntry, /from "preact"/);
   assert.match(source("extensions/car-fitment/src/mount-action.jsx"), /@shopify\/ui-extensions\/preact/);
   assert.match(source("extensions/car-fitment/src/mount-action.jsx"), /loading = false/);
+  assert.doesNotMatch(source("extensions/car-fitment/src/mount-action.jsx"), /Loading car fitment/);
   const locales = source("extensions/car-fitment/locales/en.default.json");
   assert.match(locales, /Ocean Catalogue \/ CAR FITMENT/);
   assert.match(locales, /Select one or more products, then open CAR FITMENT/);
@@ -200,6 +201,8 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   const action = source("extensions/car-fitment/src/mount-action.jsx");
   const block = source("extensions/car-fitment/src/Block.jsx");
   assert.match(action, /@shopify\/ui-extensions\/preact/);
+  assert.doesNotMatch(action, /Loading car fitment/);
+  assert.match(action, /render\(<FitmentGuard mode="action" \/>, document\.body\)/);
   assert.match(block, /@shopify\/ui-extensions\/preact/);
   const app = source("extensions/car-fitment/src/FitmentApp.jsx");
   assert.match(app, /@shopify\/ui-extensions\/preact/);
@@ -221,6 +224,15 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
     "gid://shopify/Product/3",
   ]);
   assert.deepEqual(selectedProductIds({ selected: { peek: () => { throw new Error("unready"); } } }), []);
+  assert.deepEqual(
+    selectedProductIds({
+      selected: {
+        value: [{ id: "gid://shopify/Product/9" }],
+        peek: () => [{ id: "gid://shopify/Product/1" }],
+      },
+    }),
+    ["gid://shopify/Product/9"],
+  );
   const api = source("extensions/car-fitment/src/api.js");
   assert.match(api, /\/makes\?has_vehicles=0/);
   assert.match(api, /has_next/);
