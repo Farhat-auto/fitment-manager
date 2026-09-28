@@ -1,7 +1,15 @@
 import "@shopify/ui-extensions/preact";
 import { render } from "preact";
-import { FitmentGuard } from "./guard.jsx";
+import { VehicleSearch } from "./vehicle-search.jsx";
+
+function ProductVehicleSearch() {
+  return (
+    <s-admin-block heading="Search linked products">
+      <VehicleSearch />
+    </s-admin-block>
+  );
+}
 
 export default async () => {
-  render(<FitmentGuard mode="block" />, document.body);
+  render(<ProductVehicleSearch />, document.body);
 };

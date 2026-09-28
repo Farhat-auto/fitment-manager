@@ -148,12 +148,6 @@ export function FitmentApp({ mode }) {
   );
 
   useEffect(() => {
-    if (mode !== "action" || typeof document === "undefined") return;
-    const node = document.querySelector("s-admin-action");
-    if (node) node.loading = false;
-  });
-
-  useEffect(() => {
     let cancelled = false;
     loadMakes()
       .then((rows) => {
