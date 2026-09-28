@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { catalogueFitmentMetafields, fitmentVehicleMetafields, verifiedVehicleKeys } from "../app/ocean/metafields.ts";
+import { catalogueFitmentMetafields, catalogueVehicleLabel, fitmentVehicleMetafields, linkedVehicleFilterMetafield, linkedVehicleLabels, verifiedVehicleKeys } from "../app/ocean/metafields.ts";
 
 const ownerId = "gid://shopify/Product/10758340903255";
 const [field] = fitmentVehicleMetafields(ownerId, [
@@ -29,4 +29,17 @@ assert.deepEqual(fields.map((item) => item.namespace + "." + item.key), [
 assert.equal(fields[2].value, "1");
 assert.equal(fields[3].value, "verified");
 assert.equal(JSON.parse(fields[0].value).length, JSON.parse(fields[1].value).length);
+
+const filter = linkedVehicleFilterMetafield(ownerId, [
+  { make_name: "MERCEDES-BENZ", model_name: "C-Class", generation_name: "W205", engine_code: "M 274.920", verification_status: "VERIFIED" },
+  { make_name: "BMW", model_name: "3 Series", generation_name: "E90", engine_code: "N52", verification_status: "UNVERIFIED" },
+  { make: "BMW", model: "", engine_code: "E90", verification_status: "VERIFIED" },
+  { title: "Engine oil cooler", verification_status: "VERIFIED" },
+]);
+assert.equal(filter.namespace, "custom");
+assert.equal(filter.key, "linked_vehicle");
+assert.equal(filter.type, "list.single_line_text_field");
+assert.deepEqual(JSON.parse(filter.value), ["MERCEDES-BENZ / C-Class / W205 / M 274.920"]);
+assert.equal(catalogueVehicleLabel({ engine_code: "E90" }), "");
+assert.deepEqual(linkedVehicleLabels([]), []);
 console.log("PASS verified fitment vehicle storefront sync");
