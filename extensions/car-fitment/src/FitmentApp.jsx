@@ -155,9 +155,16 @@ export function FitmentApp({ mode }) {
     let cancelled = false;
     setPhase("loading");
     resetProductScreen();
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      cancelled = true;
+      setPhase("error");
+      setError("This product did not load. Close CAR FITMENT and open it again.");
+    }, 8000);
     Promise.all(ids.map((id) => adminGraphql(PRODUCT_QUERY, { id })))
       .then((rows) => {
         if (cancelled) return;
+        clearTimeout(timer);
         const mapped = rows.map((payload, index) => {
           const node = ((payload || {}).data || {}).product;
           return productFromNode(node || { id: ids[index] });
@@ -175,6 +182,7 @@ export function FitmentApp({ mode }) {
       })
       .catch((err) => {
         if (cancelled) return;
+        clearTimeout(timer);
         setPhase("error");
         setError((err && err.message) || "This product could not be loaded.");
       });
@@ -187,6 +195,7 @@ export function FitmentApp({ mode }) {
       });
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [selectedIds.join("|")]);
 

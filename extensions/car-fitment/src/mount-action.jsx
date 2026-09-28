@@ -37,7 +37,8 @@ function paintShell(message) {
 }
 
 export default async function mountCarFitmentAction() {
-  paintShell("Loading car fitment…");
+  // The host keeps the first s-admin-action it sees, so the form is that
+  // element. A placeholder painted before render stays on screen.
   try {
     render(<FitmentGuard mode="action" />, document.body);
     unlockHost();
