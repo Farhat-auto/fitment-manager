@@ -20,6 +20,14 @@ type Preview = {
   article_number?: string;
 };
 
+function catalogueArticleSku(preview: Preview | null, sku: string, brand: string, mpn: string) {
+  const fromPreview = String(preview?.sku || "").trim();
+  const fromShopify = String(sku || "").trim();
+  if (fromPreview || fromShopify) return fromPreview || fromShopify;
+  if (String(brand || "").trim() && String(mpn || "").trim()) return String(mpn).trim();
+  return "";
+}
+
 function qs(params: Record<string, string | undefined>) {
   return Object.keys(params)
     .filter((key) => params[key])
@@ -105,6 +113,8 @@ export function CatalogueArticleLink({
     };
   }, [identity]);
 
+  const catalogueSku = catalogueArticleSku(preview, sku, brand, mpn);
+
   const apply = async (path: string, extra: Record<string, unknown>) => {
     setBusy(true);
     setError("");
@@ -122,7 +132,7 @@ export function CatalogueArticleLink({
     setBusy(false);
     if (!payload || payload.ok === false || payload.applied !== true) {
       if (payload?.error === "article_exists") {
-        setError(`Catalogue article ${payload.ocean_article_id || sku} already exists. Map that article instead of creating a new one.`);
+        setError(`Catalogue article ${payload.ocean_article_id || catalogueSku || sku} already exists. Map that article instead of creating a new one.`);
       } else if (payload?.error === "article_not_found") {
         setError("That catalogue article was not found.");
       } else {
@@ -141,7 +151,7 @@ export function CatalogueArticleLink({
         <Banner tone="warning" title="Catalogue article not linked">
           <p>
             SKU {sku || "—"} is not linked to an Ocean catalogue article, so the selected vehicles cannot be saved.
-            Choose an existing article or create one from this SKU. The product title is not used as the article or the MPN.
+            Choose an existing article, or create one from the SKU. When the SKU is blank, the catalogue article uses the brand and MPN. The product title is not used as the article or the MPN.
           </p>
         </Banner>
         {error ? <Banner tone="critical" title="Catalogue article">{error}</Banner> : null}
@@ -177,14 +187,14 @@ export function CatalogueArticleLink({
           <Text as="p" variant="bodySm">No catalogue article matches this SKU, Shopify id, or brand and MPN.</Text>
         )}
         <Text as="p" variant="bodySm">
-          Create a catalogue article for SKU {preview?.sku || sku || "—"}, brand {preview?.brand || brand || "—"}, MPN {mpn || preview?.mpn || "none"}, article number {articleNumber || "none"}.
+          Create a catalogue article for SKU {catalogueSku || "—"}, brand {preview?.brand || brand || "—"}, MPN {mpn || preview?.mpn || "none"}, article number {articleNumber || "none"}.
         </Text>
         {pending === "create" ? (
-          <Button variant="primary" loading={busy} disabled={!sku} onClick={() => apply("/article-create", {})}>
-            Confirm create {sku}
+          <Button variant="primary" loading={busy} disabled={!catalogueSku} onClick={() => apply("/article-create", {})}>
+            Confirm create {catalogueSku}
           </Button>
         ) : (
-          <Button disabled={!sku || busy} onClick={() => setPending("create")}>
+          <Button disabled={!catalogueSku || busy} onClick={() => setPending("create")}>
             Create catalogue article
           </Button>
         )}
