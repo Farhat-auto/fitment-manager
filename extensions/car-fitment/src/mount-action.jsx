@@ -38,24 +38,14 @@ function paintShell(message) {
   unlockHost();
 }
 
-export default async function mountCarFitmentAction() {
-  // Shopify paints an empty loading action before this file runs, and it
-  // keeps that first element. Fill that element. A second action stays hidden
-  // behind the spinner.
-  const shell = document.querySelector("s-admin-action");
-  if (shell) {
-    shell.heading = "Ocean Catalogue / CAR FITMENT";
-    shell.loading = false;
-    shell.removeAttribute("loading");
-  }
+export default function mountCarFitmentAction() {
+  // The products page keeps the first admin action and shows its spinner
+  // until this file replaces it with the real window.
   try {
-    render(
-      <FitmentGuard mode="action" insideHost={Boolean(shell)} />,
-      shell || document.body,
-    );
+    const stale = document.querySelectorAll("s-admin-action");
+    for (let index = 0; index < stale.length; index += 1) stale[index].remove();
+    render(<FitmentGuard mode="action" />, document.body);
     unlockHost();
-    requestAnimationFrame(unlockHost);
-    setTimeout(unlockHost, 0);
   } catch (error) {
     paintShell((error && error.message) || "CAR FITMENT could not open.");
   }

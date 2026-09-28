@@ -1,4 +1,12 @@
 {
+  "headers": [
+    {
+      "source": "/fitment-application-template.csv",
+      "headers": [
+        { "key": "Content-Disposition", "value": "attachment; filename=\"fitment-application-template.csv\"" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/apps/fitment-manager-2/:path*",
