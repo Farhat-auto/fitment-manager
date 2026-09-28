@@ -91,6 +91,13 @@ check("A listing is rejected on B", () => {
   assert.equal(listingBelongsTo(listingA, identityB), false);
 });
 
+check("matching Shopify product id wins over a different SKU string", () => {
+  const catalogue = listing(PRODUCT_A, "HI-BRIT-HB-00319", [VEHICLE_A]);
+  assert.equal(listingBelongsTo(catalogue, { shopify_product_id: PRODUCT_A, sku: "HB-00319" }), true);
+  assert.equal(listingBelongsTo(catalogue, { shopify_product_id: PRODUCT_B, sku: "HI-BRIT-HB-00319" }), false);
+  assert.equal(listingBelongsTo(catalogue, { sku: "HB-00319" }), false);
+});
+
 check("A → B → C → A isolation", () => {
   let screen = resetProductScreen(PRODUCT_A);
   screen = acceptListing(screen, listing(PRODUCT_A, SKU_A, [VEHICLE_A]), identityA);
