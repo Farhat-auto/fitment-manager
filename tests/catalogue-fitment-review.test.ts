@@ -21,5 +21,11 @@ assert.match(ui, /vehicle_active !== false/);
 assert.match(ui, /Open product in Shopify/);
 assert.match(ui, /trust_class/);
 assert.doesNotMatch(ui, /metafieldsSet/);
+assert.match(ui, /Select page/);
+assert.match(ui, /Select all filtered/);
+assert.match(ui, /Verify eligible authoritative/);
+assert.match(ui, /bulk_review_selected/);
+assert.match(ui, /identity evidence/);
+assert.match(api, /bulk_review_selected/);
 
 console.log("PASS catalogue fitment review");
