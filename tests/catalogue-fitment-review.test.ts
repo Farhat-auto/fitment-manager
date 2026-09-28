@@ -27,5 +27,10 @@ assert.match(ui, /Verify eligible authoritative/);
 assert.match(ui, /bulk_review_selected/);
 assert.match(ui, /identity evidence/);
 assert.match(api, /bulk_review_selected/);
+assert.match(ui, /add_same_vehicle/);
+assert.match(ui, /A different item can be selected for the same vehicle/);
+assert.match(ui, /verification_status: "UNVERIFIED"/);
+assert.match(ui, /Other items on those vehicles were left as they are/);
+assert.doesNotMatch(ui, /add_same_vehicle[\s\S]{0,500}verification_status: "VERIFIED"/);
 
 console.log("PASS catalogue fitment review");
