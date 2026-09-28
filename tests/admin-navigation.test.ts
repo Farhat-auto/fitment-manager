@@ -69,6 +69,9 @@ assert.match(review, /Verify authoritative candidates only/);
 
 const products = source("app/routes/app.products.tsx");
 assert.match(products, /Open product/);
+assert.match(products, /useOutlet\(\)/);
+assert.match(products, /if \(outlet\) return outlet/);
+assert.match(products, /navigate\(appHref\(`\/app\/products\/\$\{numericProductId/);
 assert.match(products, /Fitment Review/);
 assert.match(products, /catalogue-fitment-review/);
 

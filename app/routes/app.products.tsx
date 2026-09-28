@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useFetcher, useLoaderData, Link as RemixLink, useLocation, useNavigate, useRevalidator } from "@remix-run/react";
+import { useFetcher, useLoaderData, Link as RemixLink, useLocation, useNavigate, useOutlet, useRevalidator } from "@remix-run/react";
 import * as React from "react";
 import {
   Page,
@@ -598,6 +598,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Products() {
+  const outlet = useOutlet();
   const { products, pageInfo, shop, metaobjectOptions, appliedFilters } = useLoaderData<typeof loader>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -950,6 +951,10 @@ export default function Products() {
     }
   }, [selectedProductIds, location.search]);
 
+  // /app/products/:id is a child of this route. Without the outlet, Open product
+  // changes the URL and the product list stays on screen.
+  if (outlet) return outlet;
+
   return (
     <Page
       title="Products"
@@ -1145,12 +1150,12 @@ export default function Products() {
 
                     <InlineStack gap="200" wrap>
                       {numericProductId(String(p.id || "")) ? (
-                        <RemixLink
-                          to={appHref(`/app/products/${numericProductId(String(p.id || ""))}`, location.search || "")}
-                          style={{ textDecoration: "none" }}
+                        <Button
+                          variant="primary"
+                          onClick={() => navigate(appHref(`/app/products/${numericProductId(String(p.id || ""))}`, location.search || ""))}
                         >
-                          <Button variant="primary">Open product</Button>
-                        </RemixLink>
+                          Open product
+                        </Button>
                       ) : (
                         <Text as="p" tone="critical">Open product failed: Shopify product ID is missing.</Text>
                       )}
