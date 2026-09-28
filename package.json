@@ -24,7 +24,8 @@
     "test:admin-nav": "node --experimental-strip-types tests/admin-navigation.test.ts",
     "test:product-link": "node --experimental-strip-types tests/product-link.test.ts",
     "test:item-category": "node --experimental-strip-types tests/item-category-multimake.test.ts",
-    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index && npm run test:sync-owner && npm run test:catalogue-review && npm run test:admin-nav && npm run test:product-link && npm run test:item-category"
+    "test:application-csv": "node --experimental-strip-types --test tests/application-csv.test.ts",
+    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index && npm run test:sync-owner && npm run test:catalogue-review && npm run test:admin-nav && npm run test:product-link && npm run test:item-category && npm run test:application-csv"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",

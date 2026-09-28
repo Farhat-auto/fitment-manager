@@ -650,7 +650,7 @@ export default function ExportCsvPage() {
         <Card>
           <BlockStack gap="200">
             <Text as="p" variant="bodyMd">
-              Select products, then export a CSV suitable for editing and re-importing.
+              Select products to export legacy Shopify vehicle links. This diagnostic CSV is not the application import template; use Import application data for new fitments.
             </Text>
 
             <InlineStack gap="200" blockAlign="center" wrap>
