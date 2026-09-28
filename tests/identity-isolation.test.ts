@@ -186,14 +186,18 @@ check("CAR FITMENT port preserves proven reset/isolation", () => {
   const bulk = source("extensions/car-fitment-bulk/shopify.extension.toml");
   assert.match(bulk, /admin.product-index.selection-action.render/);
   assert.match(bulk, /4130cb4c-2d0b-cde5-d1de-06c064360c720b8d414e/);
-  assert.match(source("extensions/car-fitment-index/src/Action.jsx"), /@shopify\/ui-extensions\/preact/);
+  const indexEntry = source("extensions/car-fitment-index/src/Action.jsx");
+  assert.match(indexEntry, /mount-action\.jsx/);
+  assert.doesNotMatch(indexEntry, /from "preact"/);
+  assert.match(source("extensions/car-fitment/src/mount-action.jsx"), /@shopify\/ui-extensions\/preact/);
+  assert.match(source("extensions/car-fitment/src/mount-action.jsx"), /loading = false/);
   const locales = source("extensions/car-fitment/locales/en.default.json");
   assert.match(locales, /Ocean Catalogue \/ CAR FITMENT/);
   assert.match(locales, /Select one or more products, then open CAR FITMENT/);
 });
 
 check("CAR FITMENT product-page action leaves the host spinner", () => {
-  const action = source("extensions/car-fitment/src/Action.jsx");
+  const action = source("extensions/car-fitment/src/mount-action.jsx");
   const block = source("extensions/car-fitment/src/Block.jsx");
   assert.match(action, /@shopify\/ui-extensions\/preact/);
   assert.match(block, /@shopify\/ui-extensions\/preact/);

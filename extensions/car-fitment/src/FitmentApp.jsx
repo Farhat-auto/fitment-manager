@@ -18,10 +18,24 @@ function qs(params) {
 export function FitmentApp({ mode }) {
   const shop = typeof shopify === "undefined" ? {} : shopify || {};
   const close = typeof shop.close === "function" ? shop.close : null;
-  const data = shop.data || {};
-  const i18n =
-    shop.i18n && typeof shop.i18n.translate === "function" ? shop.i18n : { translate: (key) => key };
-  const selectedIds = selectedProductIds(data);
+  let data = {};
+  try {
+    data = shop.data || {};
+  } catch (err) {
+    data = {};
+  }
+  let i18n = { translate: (key) => key };
+  try {
+    if (shop.i18n && typeof shop.i18n.translate === "function") i18n = shop.i18n;
+  } catch (err) {
+    i18n = { translate: (key) => key };
+  }
+  let selectedIds = [];
+  try {
+    selectedIds = selectedProductIds(data);
+  } catch (err) {
+    selectedIds = [];
+  }
   const fallbackId = selectedIds[0] || "";
   const [activeId, setActiveId] = useState(selectedIds[0] || fallbackId);
   const selectedId = activeId || fallbackId;
