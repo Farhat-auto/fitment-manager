@@ -11,10 +11,12 @@ function closeAction() {
 }
 
 function unlockHost() {
-  const node = document.querySelector("s-admin-action");
-  if (!node) return;
-  node.loading = false;
-  node.removeAttribute("loading");
+  const nodes = document.querySelectorAll("s-admin-action");
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    node.loading = false;
+    node.removeAttribute("loading");
+  }
 }
 
 function paintShell(message) {
@@ -37,12 +39,23 @@ function paintShell(message) {
 }
 
 export default async function mountCarFitmentAction() {
-  // The host keeps the first s-admin-action it sees, so the form is that
-  // element. A placeholder painted before render stays on screen.
+  // Shopify paints an empty loading action before this file runs, and it
+  // keeps that first element. Fill that element. A second action stays hidden
+  // behind the spinner.
+  const shell = document.querySelector("s-admin-action");
+  if (shell) {
+    shell.heading = "Ocean Catalogue / CAR FITMENT";
+    shell.loading = false;
+    shell.removeAttribute("loading");
+  }
   try {
-    render(<FitmentGuard mode="action" />, document.body);
+    render(
+      <FitmentGuard mode="action" insideHost={Boolean(shell)} />,
+      shell || document.body,
+    );
     unlockHost();
     requestAnimationFrame(unlockHost);
+    setTimeout(unlockHost, 0);
   } catch (error) {
     paintShell((error && error.message) || "CAR FITMENT could not open.");
   }
