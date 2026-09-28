@@ -10,6 +10,7 @@ import {
   Select,
   Text,
   TextField,
+  Thumbnail,
 } from "@shopify/polaris";
 import {
   UNVERIFIED,
@@ -30,6 +31,7 @@ type VehicleRow = {
   generation_name?: string;
   engine?: string;
   engine_code?: string;
+  power_kw?: string | number;
   year_range?: string;
   checkbox_label?: string;
   customer_label?: string;
@@ -94,7 +96,15 @@ async function oceanPost(body: Record<string, unknown>) {
   return res.json();
 }
 
-export function CarFitmentPanel({ article, initialListing }: { article: Article; initialListing: Listing }) {
+export function CarFitmentPanel({
+  article,
+  initialListing,
+  imageUrl,
+}: {
+  article: Article;
+  initialListing: Listing;
+  imageUrl?: string;
+}) {
   const [listing, setListing] = React.useState<Listing>(initialListing || { fitments: [], count: 0 });
   const [view, setView] = React.useState<"list" | "add" | "bulk" | "import" | "edit">("list");
   const [busy, setBusy] = React.useState(false);
@@ -103,7 +113,7 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
   const [search, setSearch] = React.useState("");
   const [hits, setHits] = React.useState<VehicleRow[]>([]);
   const [makes, setMakes] = React.useState<Array<{ id: string; name: string }>>([]);
-  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string }>>([]);
+  const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; type_count?: number }>>([]);
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
   const [engines, setEngines] = React.useState<VehicleRow[]>([]);
   const [makeId, setMakeId] = React.useState("");
@@ -205,7 +215,9 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setChecked({});
     if (!value) return;
     const payload = await oceanGet("/models?make_id=" + encodeURIComponent(value));
-    setModels(payload.models || []);
+    const rows = ((payload.models || []) as Array<{ id: string; type_count?: number }>).slice();
+    rows.sort((left, right) => Number(right.type_count || 0) - Number(left.type_count || 0));
+    setModels(rows);
   };
 
   const onModel = async (value: string) => {
@@ -243,11 +255,12 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
     setHits(payload.results || []);
   };
 
+  const engineKey = (row: VehicleRow) => String(row.vehicle_key || row.vehicle_id || row.id || "");
+
   const selectedEngines = React.useMemo(() => {
-    if (view === "bulk") return engines.filter((row) => checked[row.vehicle_key || row.vehicle_id || row.id || ""]);
-    if (engineId) return engines.filter((row) => (row.vehicle_key || row.vehicle_id || row.id) === engineId);
+    if (view === "add" || view === "bulk") return engines.filter((row) => checked[engineKey(row)]);
     return hits.filter((row) => checked[row.vehicle_id || row.vehicle_key || row.id || ""]);
-  }, [view, engines, checked, engineId, hits]);
+  }, [view, engines, checked, hits]);
 
   const addIds = selectedEngines
     .map((row) => row.vehicle_id || row.vehicle_key || row.id)
@@ -265,9 +278,9 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
       fitment_note: note,
     });
     if (payload && payload.ok !== false) {
-      setView("list");
       setChecked({});
       setEngineId("");
+      setStatus(`Added ${addIds.length} engine${addIds.length === 1 ? "" : "s"}. Choose another model or make to add more.`);
     }
   };
 
@@ -318,9 +331,21 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               {listing.fitment_label || `Fitment: ${count} vehicles`}
             </Badge>
           </InlineStack>
-          <Text as="p" variant="bodyMd">
-            Catalogue article: Brand {article.vendor || "—"} · MPN {article.mpn || "—"} · SKU {article.sku || "—"}
-          </Text>
+          <InlineStack gap="300" blockAlign="center">
+            <Thumbnail
+              source={imageUrl || "https://cdn.shopify.com/static/images/placeholders/product-1.png"}
+              alt={article.title || article.sku || "Catalogue article"}
+              size="large"
+            />
+            <BlockStack gap="100">
+              <Text as="p" variant="bodyMd">
+                {article.title || "Catalogue article"}
+              </Text>
+              <Text as="p" variant="bodyMd">
+                Brand {article.vendor || "—"} · MPN {article.mpn || "—"} · SKU {article.sku || "—"}
+              </Text>
+            </BlockStack>
+          </InlineStack>
           <Text as="p" variant="bodySm" tone="subdued">
             Shopify product {article.numericId || "unmapped"}
             {article.variantNumericId ? ` · variant ${article.variantNumericId}` : ""}
@@ -439,7 +464,12 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               disabled={!makeId}
               options={[
                 { label: "Select model", value: "" },
-                ...models.map((row) => ({ label: row.name || row.title || row.id, value: row.id })),
+                ...models.map((row) => ({
+                  label: `${row.name || row.title || row.id}${
+                    Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : " · no engines"
+                  }`,
+                  value: row.id,
+                })),
               ]}
               value={modelId}
               onChange={onModel}
@@ -457,40 +487,52 @@ export function CarFitmentPanel({ article, initialListing }: { article: Article;
               value={generationId}
               onChange={onGeneration}
             />
-            {view === "add" ? (
-              <Select
-                label="Engine"
-                disabled={!modelId}
-                options={[
-                  { label: "Select engine", value: "" },
-                  ...engines.map((row) => ({
-                    label: `${row.detail || row.customer_label || row.engine || ""}`.trim(),
-                    value: String(row.vehicle_key || row.vehicle_id || row.id),
-                  })),
-                ]}
-                value={engineId}
-                onChange={setEngineId}
-              />
-            ) : (
-              engines.map((row) => {
-                const key = String(row.vehicle_key || row.vehicle_id || row.id);
-                return (
-                  <Checkbox
-                    key={key}
-                    label={row.checkbox_label || row.detail || row.customer_label || key}
-                    checked={!!checked[key]}
-                    onChange={(val) =>
-                      setChecked((current) => {
-                        const next = { ...current };
-                        if (val) next[key] = true;
-                        else delete next[key];
-                        return next;
-                      })
-                    }
-                  />
-                );
-              })
-            )}
+            <InlineStack gap="200">
+              <Button
+                disabled={!engines.length}
+                onClick={() =>
+                  setChecked((current) => {
+                    const next = { ...current };
+                    engines.forEach((row) => {
+                      const key = engineKey(row);
+                      if (key) next[key] = true;
+                    });
+                    return next;
+                  })
+                }
+              >
+                Select all engines
+              </Button>
+              <Button disabled={!engines.length} onClick={() => setChecked({})}>
+                Clear engines
+              </Button>
+            </InlineStack>
+            {engines.map((row) => {
+              const key = engineKey(row);
+              const label = [
+                row.engine_code,
+                row.power_kw ? `${row.power_kw} kW` : "",
+                row.year_range,
+                row.detail || row.customer_label || row.engine,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <Checkbox
+                  key={key}
+                  label={row.checkbox_label || label || key}
+                  checked={!!checked[key]}
+                  onChange={(val) =>
+                    setChecked((current) => {
+                      const next = { ...current };
+                      if (val) next[key] = true;
+                      else delete next[key];
+                      return next;
+                    })
+                  }
+                />
+              );
+            })}
             {engineId
               ? engines
                   .filter((row) => (row.vehicle_key || row.vehicle_id || row.id) === engineId)
