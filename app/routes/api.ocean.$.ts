@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { oceanGet, oceanPost, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { emptyListing, stableIdentity } from "../ocean/identity";
-import { METAFIELDS_SET, catalogueFitmentMetafields, verifiedVehicleKeys } from "../ocean/metafields";
+import { METAFIELDS_SET, catalogueFitmentMetafields, ensureLinkedVehicleFilter, linkedVehicleFilterMetafield, verifiedVehicleKeys } from "../ocean/metafields";
 
 const ALLOWED = new Set([
   "makes",
@@ -71,6 +71,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const listing = await oceanProductFitmentGet(resolved.identity);
     return cors(json(listing));
   }
+  if (name === "makes") {
+    try {
+      await ensureLinkedVehicleFilter(admin);
+    } catch (error) {
+      console.error("VEHICLE_FILTER_DEFINITION_FAILED", error);
+    }
+  }
   const payload = await oceanGet(`/${name}`, url.searchParams.toString());
   return cors(json(payload));
 }
@@ -132,9 +139,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
         console.error("STOREFRONT_FITMENT_SYNC_FAILED", { ownerId, userErrors });
         return cors(json({ ...payload, storefront_sync: { ok: false, userErrors } }, { status: 502 }));
       }
+      let vehicleFilter: { ok: boolean; userErrors?: unknown } = { ok: false };
+      try {
+        const ready = await ensureLinkedVehicleFilter(admin);
+        if (ready.ok) {
+          const filterResponse = await admin.graphql(METAFIELDS_SET, {
+            variables: { metafields: [linkedVehicleFilterMetafield(ownerId, fitments)] },
+          });
+          const filterJson = await filterResponse.json();
+          const filterErrors = filterJson?.data?.metafieldsSet?.userErrors ?? [];
+          vehicleFilter = filterErrors.length ? { ok: false, userErrors: filterErrors } : { ok: true };
+        } else {
+          vehicleFilter = ready;
+        }
+      } catch (error) {
+        console.error("VEHICLE_FILTER_SYNC_FAILED", error);
+      }
       payload.storefront_sync = {
         ok: true,
         verified_vehicle_keys: verifiedVehicleKeys(fitments),
+        vehicle_filter: vehicleFilter,
       };
     }
   }

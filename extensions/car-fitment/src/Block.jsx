@@ -4,7 +4,7 @@ import { VehicleSearch } from "./vehicle-search.jsx";
 
 function ProductVehicleSearch() {
   return (
-    <s-admin-block heading="Search linked products">
+    <s-admin-block heading="Vehicle filter">
       <VehicleSearch />
     </s-admin-block>
   );

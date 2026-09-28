@@ -62,6 +62,92 @@ export function verifiedVehicleKeys(fitments: unknown): string[] {
   return vehicleKeys;
 }
 
+function fieldText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function verifiedFitment(row: Record<string, unknown>) {
+  const status = fieldText(row.verification_status || row.verificationStatus).toUpperCase();
+  return row.public_fits === true || row.visible === true || status === "VERIFIED";
+}
+
+/** Catalogue path for the products-page filter. Make and model are required, so a bare chassis code is not a choice. */
+export function catalogueVehicleLabel(row: Record<string, unknown>) {
+  const make = fieldText(row.make_name || row.make);
+  const model = fieldText(row.model_name || row.model);
+  if (!make || !model) return "";
+  const generation = fieldText(row.generation_name || row.generation);
+  const engine = fieldText(row.engine_code || row.engine);
+  return [make, model, generation, engine].filter(Boolean).join(" / ");
+}
+
+export function linkedVehicleLabels(fitments: unknown) {
+  const rows = Array.isArray(fitments) ? fitments : [];
+  const labels: string[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    if (!verifiedFitment(record)) continue;
+    const label = catalogueVehicleLabel(record);
+    if (!label || labels.includes(label)) continue;
+    labels.push(label);
+  }
+  return labels.slice(0, 128);
+}
+
+export function linkedVehicleFilterMetafield(ownerId: string, fitments: unknown) {
+  return {
+    ownerId,
+    namespace: "custom",
+    key: "linked_vehicle",
+    type: "list.single_line_text_field",
+    value: JSON.stringify(linkedVehicleLabels(fitments)),
+  };
+}
+
+export const ENSURE_LINKED_VEHICLE_DEFINITION = `#graphql
+  mutation EnsureLinkedVehicleDefinition {
+    metafieldDefinitionCreate(
+      definition: {
+        name: "Vehicle"
+        namespace: "custom"
+        key: "linked_vehicle"
+        description: "Catalogue vehicle linked to this product: make / model / generation / engine."
+        type: "list.single_line_text_field"
+        ownerType: PRODUCT
+        pin: true
+        capabilities: { adminFilterable: { enabled: true } }
+      }
+    ) {
+      createdDefinition { id }
+      userErrors { code message }
+    }
+  }
+`;
+
+let linkedVehicleFilterReady = false;
+
+export async function ensureLinkedVehicleFilter(admin: {
+  graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<{ json: () => Promise<unknown> }>;
+}) {
+  if (linkedVehicleFilterReady) return { ok: true };
+  const response = await admin.graphql(ENSURE_LINKED_VEHICLE_DEFINITION);
+  const body = (await response.json()) as {
+    data?: { metafieldDefinitionCreate?: { userErrors?: Array<{ code?: string; message?: string }> } };
+  };
+  const errors = body?.data?.metafieldDefinitionCreate?.userErrors ?? [];
+  const blocking = errors.filter((error) => {
+    const code = String(error?.code || "");
+    const message = String(error?.message || "");
+    return code !== "TAKEN" && !/already exists|taken|in use/i.test(message);
+  });
+  if (!blocking.length) {
+    linkedVehicleFilterReady = true;
+    return { ok: true };
+  }
+  return { ok: false, userErrors: blocking };
+}
+
 export function fitmentVehicleMetafields(ownerId: string, fitments: unknown) {
   return catalogueFitmentMetafields(ownerId, verifiedVehicleKeys(fitments)).filter(
     (field) => field.namespace === "ocean" && field.key === "verified_vehicle_keys",
