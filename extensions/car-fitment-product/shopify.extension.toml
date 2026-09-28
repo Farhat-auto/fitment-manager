@@ -2,13 +2,13 @@ api_version = "2025-10"
 
 [[extensions]]
 name = "t:name"
-handle = "car-fitment"
-uid = "b1c539a2-8d08-74fa-bf03-76c6d58fa53990eb9e83"
+handle = "car-fitment-product"
+uid = "a588ae28-c944-ba77-2c85-6047ed8403b5d42c2c01"
 type = "ui_extension"
 
 [[extensions.targeting]]
-module = "./src/Block.jsx"
-target = "admin.product-details.block.render"
+module = "./src/Action.jsx"
+target = "admin.product-details.action.render"
 
 [extensions.capabilities]
 api_access = true

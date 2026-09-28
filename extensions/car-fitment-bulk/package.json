@@ -1,0 +1,12 @@
+{
+  "name": "car-fitment-bulk",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@preact/signals": "^2.3.0",
+    "@shopify/ui-extensions": "2025.10.16",
+    "preact": "^10.26.5"
+  }
+}

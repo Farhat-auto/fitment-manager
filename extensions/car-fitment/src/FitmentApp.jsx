@@ -1,6 +1,12 @@
+import "@shopify/ui-extensions/preact";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
-import { adminGraphql, catalogueGet, cataloguePost } from "./api";
-import { PRODUCT_QUERY, productFromNode } from "./payload";
+import { adminGraphql, catalogueGet, cataloguePages, cataloguePost, loadMakes } from "./api.js";
+import { PRODUCT_QUERY, productFromNode } from "./payload.js";
+import { selectedProductIds } from "./selection.js";
+
+function clearHostLoading(node) {
+  if (node) node.loading = false;
+}
 
 function qs(params) {
   return Object.keys(params)
@@ -10,13 +16,17 @@ function qs(params) {
 }
 
 export function FitmentApp({ mode }) {
-  const { close, data, i18n } = shopify;
-  const selected = ((data || {}).selected) || [];
-  const selectedIds = selected.map((row) => row && row.id).filter(Boolean);
-  const fallbackId = ((((data || {}).selected) || [])[0] || {}).id || "";
+  const shop = typeof shopify === "undefined" ? {} : shopify || {};
+  const close = typeof shop.close === "function" ? shop.close : null;
+  const data = shop.data || {};
+  const i18n =
+    shop.i18n && typeof shop.i18n.translate === "function" ? shop.i18n : { translate: (key) => key };
+  const selectedIds = selectedProductIds(data);
+  const fallbackId = selectedIds[0] || "";
   const [activeId, setActiveId] = useState(selectedIds[0] || fallbackId);
   const selectedId = activeId || fallbackId;
   const [product, setProduct] = useState(null);
+  const [phase, setPhase] = useState(selectedIds.length ? "loading" : "choose");
   const [products, setProducts] = useState([]);
   const [listing, setListing] = useState({ fitments: [], count: 0, sources: [], verification_statuses: [] });
   const [workspace, setWorkspace] = useState("fitment");
@@ -115,20 +125,55 @@ export function FitmentApp({ mode }) {
   );
 
   useEffect(() => {
+    if (mode !== "action" || typeof document === "undefined") return;
+    const node = document.querySelector("s-admin-action");
+    if (node) node.loading = false;
+  });
+
+  useEffect(() => {
     const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
-    if (!ids.length) return;
+    if (!ids.length) {
+      setPhase("choose");
+      setProduct(null);
+      setProducts([]);
+      return;
+    }
+    let cancelled = false;
+    setPhase("loading");
     resetProductScreen();
-    Promise.all(ids.map((id) => adminGraphql(PRODUCT_QUERY, { id }))).then((rows) => {
-      const mapped = rows.map((payload, index) => {
-        const node = ((payload || {}).data || {}).product;
-        return productFromNode(node || { id: ids[index] });
+    Promise.all(ids.map((id) => adminGraphql(PRODUCT_QUERY, { id })))
+      .then((rows) => {
+        if (cancelled) return;
+        const mapped = rows.map((payload, index) => {
+          const node = ((payload || {}).data || {}).product;
+          return productFromNode(node || { id: ids[index] });
+        });
+        setProducts(mapped);
+        const current = mapped.find((row) => row.id === selectedId) || mapped[0];
+        setProduct(current || null);
+        if (current && current.id !== selectedId) setActiveId(current.id);
+        if (!current || !current.id) {
+          setPhase("error");
+          setError("This product could not be loaded.");
+          return;
+        }
+        setPhase("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPhase("error");
+        setError((err && err.message) || "This product could not be loaded.");
       });
-      setProducts(mapped);
-      const current = mapped.find((row) => row.id === selectedId) || mapped[0];
-      setProduct(current || null);
-      if (current && current.id !== selectedId) setActiveId(current.id);
-    });
-    catalogueGet("/makes").then((payload) => setMakes(payload.makes || []));
+    loadMakes()
+      .then((rows) => {
+        if (!cancelled) setMakes(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setError(i18n.translate("ladder-error"));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedIds.join("|")]);
 
   useEffect(() => {
@@ -186,8 +231,11 @@ export function FitmentApp({ mode }) {
     setEngines([]);
     setChecked({});
     if (!value) return;
-    const payload = await catalogueGet("/models?make_id=" + encodeURIComponent(value));
-    setModels(payload.models || []);
+    const rows = await cataloguePages(
+      "/models?has_vehicles=0&make_id=" + encodeURIComponent(value),
+      "models",
+    );
+    setModels(rows);
   }, []);
 
   const onModel = useCallback(
@@ -200,15 +248,16 @@ export function FitmentApp({ mode }) {
       setEngines([]);
       setChecked({});
       if (!value || !makeId) return;
-      const gens = await catalogueGet(
-        "/generations?" + qs({ make_id: makeId, model_id: value }),
-        true,
+      const gens = await cataloguePages(
+        "/generations?" + qs({ make_id: makeId, model_id: value, has_vehicles: "0" }),
+        "generations",
       );
-      setGenerations(gens.generations || []);
-      const payload = await catalogueGet(
-        "/engines?" + qs({ make_id: makeId, model_id: value }),
+      setGenerations(gens);
+      const engines = await cataloguePages(
+        "/engines?" + qs({ make_id: makeId, model_id: value, has_vehicles: "0" }),
+        ["engines", "types"],
       );
-      setEngines(payload.engines || payload.types || []);
+      setEngines(engines);
     },
     [makeId],
   );
@@ -220,10 +269,11 @@ export function FitmentApp({ mode }) {
       setEngineId("");
       setChecked({});
       if (!value || !makeId || !modelId) return;
-      const payload = await catalogueGet(
-        "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value }),
+      const rows = await cataloguePages(
+        "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value, has_vehicles: "0" }),
+        ["engines", "types"],
       );
-      setEngines(payload.engines || payload.types || []);
+      setEngines(rows);
     },
     [makeId, modelId],
   );
@@ -376,6 +426,7 @@ export function FitmentApp({ mode }) {
   const count = listing.count || fitments.length;
   const Wrapper = mode === "action" ? "s-admin-action" : "s-admin-block";
   const wrapperHeading = i18n.translate("heading");
+  const actionProps = mode === "action" ? { loading: false, ref: clearHostLoading } : {};
 
   const provenance = (
     <s-stack gap="base">
@@ -446,24 +497,38 @@ export function FitmentApp({ mode }) {
   );
 
   return (
-    <Wrapper heading={wrapperHeading}>
+    <Wrapper heading={wrapperHeading} {...actionProps}>
       {mode === "action" ? (
-        <s-button slot="primary-action" onClick={view === "import" ? importRows : view === "edit" ? saveEdit : addSelected} disabled={busy}>
-          {view === "import"
-            ? i18n.translate("import-fitment")
-            : view === "bulk"
-              ? "Add " + addIds.length + " vehicles"
-              : view === "edit"
-                ? i18n.translate("save")
-                : i18n.translate("add-compatibility")}
+        <s-button
+          slot="primary-action"
+          onClick={
+            phase === "choose"
+              ? () => close && close()
+              : view === "import"
+                ? importRows
+                : view === "edit"
+                  ? saveEdit
+                  : addSelected
+          }
+          disabled={phase === "choose" ? false : busy || phase === "loading"}
+        >
+          {phase === "choose"
+            ? "Close"
+            : view === "import"
+              ? i18n.translate("import-fitment")
+              : view === "bulk"
+                ? "Add " + addIds.length + " vehicles"
+                : view === "edit"
+                  ? i18n.translate("save")
+                  : i18n.translate("add-compatibility")}
         </s-button>
       ) : (
         <s-button slot="primary-action" onClick={() => setView("add")}>
           {i18n.translate("add-vehicle")}
         </s-button>
       )}
-      {mode === "action" && close ? (
-        <s-button slot="secondary-actions" onClick={close}>
+      {mode === "action" ? (
+        <s-button slot="secondary-actions" onClick={() => close && close()}>
           {i18n.translate("cancel")}
         </s-button>
       ) : null}
@@ -555,7 +620,8 @@ export function FitmentApp({ mode }) {
         </s-stack>
         {error ? <s-banner tone="critical">{error}</s-banner> : null}
         {status ? <s-banner tone="success">{status}</s-banner> : null}
-        {!product ? <s-text>{i18n.translate("loading")}</s-text> : null}
+        {phase === "choose" ? <s-banner tone="warning">{i18n.translate("select-products")}</s-banner> : null}
+        {phase === "loading" ? <s-text>{i18n.translate("loading")}</s-text> : null}
         {!count && view === "list" ? <s-banner tone="warning">{i18n.translate("zero")}</s-banner> : null}
 
         {view === "list"
@@ -588,7 +654,7 @@ export function FitmentApp({ mode }) {
           </s-stack>
         ) : null}
 
-        {view === "add" || view === "bulk" ? (
+        {phase !== "choose" && (view === "add" || view === "bulk") ? (
           <s-stack gap="base">
             <s-text-field
               label={i18n.translate("search-label")}
