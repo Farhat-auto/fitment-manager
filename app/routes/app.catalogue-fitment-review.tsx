@@ -30,6 +30,9 @@ type FitmentRow = {
   vehicle_active?: boolean;
   review_status?: string;
   conflict_reason?: string;
+  brand?: string;
+  mpn?: string;
+  sku?: string;
 };
 
 type ReviewPayload = {
@@ -50,6 +53,7 @@ type ReviewPayload = {
   oe_numbers?: Array<{ number?: string }>;
   cross_references?: Array<{ brand?: string; number?: string }>;
   add_result?: { ok?: boolean; error?: string; added_count?: number; requested?: number };
+  same_car_items?: Array<{ sku?: string; brand?: string; mpn?: string; name?: string; vehicle_key?: string; review_status?: string }>;
 };
 
 type VehicleHit = {
@@ -111,7 +115,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "canonical_vehicle_key_required" }, { status: 400 });
   }
   const actor = text((session as { email?: string; shop?: string }).email || session.shop || "shopify-admin");
-  const review = await oceanPost("/fitment-review", {
+  const posted = await oceanPost("/fitment-review", {
     action: actionName,
     review_action: text(fd.get("review_action")),
     sku,
@@ -119,7 +123,11 @@ export async function action({ request }: ActionFunctionArgs) {
     vehicle_keys: vehicleKeys,
     actor,
   });
-  return json(review);
+  if (posted && posted.ok && sku) {
+    const fresh = await oceanGet("/fitment-review", new URLSearchParams({ sku }).toString());
+    if (fresh && typeof fresh === "object") return json({ ...fresh, action_result: posted });
+  }
+  return json(posted);
 }
 
 const PAGE_SIZE = 25;
@@ -141,7 +149,7 @@ function rowStatus(row: FitmentRow) {
 
 function explainError(error: string) {
   if (error === "conflict_requires_resolution") {
-    return "This row is a conflict, so it cannot be set to verified. A different item can still be added to that same vehicle.";
+    return "A different brand or part number can fit the same car. Verify selects this item only and leaves the other item unchanged.";
   }
   if (error === "unmapped" || error === "product_not_found") {
     return "This SKU is not a catalogue article, so the vehicle was not added.";
@@ -378,7 +386,7 @@ export default function CatalogueFitmentReview() {
                 </InlineStack>
                 <Text as="p" tone="subdued">OE and cross-reference data are identity evidence only. Verify a vehicle only after reviewing authoritative application evidence. Bulk verify leaves identity evidence unverified and returns the reason.</Text>
                 <Link to={appHref("/app/legacy-migration", location.search || "")}>Legacy migration queue</Link>
-                {conflicts.length ? <Banner tone="warning"><p>Conflict warnings stay in review. They are not verified by the bulk action.</p></Banner> : null}
+                {conflicts.length ? <Banner tone="warning"><p>A different brand or part number can fit the same car. Use Verify on that row. It selects this item only and does not change the other item. The bulk button still leaves conflicts unverified.</p></Banner> : null}
                 <Form method="post">
                   <input type="hidden" name="action" value="bulk_verify_authoritative" />
                   <input type="hidden" name="sku" value={text(review.sku || sku)} />
@@ -387,6 +395,18 @@ export default function CatalogueFitmentReview() {
               </BlockStack>
             </Card>
             <SameVehiclePicker sku={text(review.sku || sku)} />
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">Same car, other brand or part number</Text>
+                <Text as="p">These numbers belong to this item. A different brand or part number can fit the same car and can be selected on its own row.</Text>
+                {oes.map((number) => <Text as="p" key={number}>OE {number}</Text>)}
+                {refs.map((number) => <Text as="p" key={`xref-${number}`}>Cross reference {number}</Text>)}
+                {(review.same_car_items || []).map((item) => (
+                  <Text as="p" key={`${item.sku}-${item.vehicle_key}`}>{text(item.brand) || "Brand"} · {text(item.mpn) || text(item.sku)} · {text(item.vehicle_key)} · {text(item.review_status) || "unverified"}</Text>
+                ))}
+                {!oes.length && !refs.length && !(review.same_car_items || []).length ? <Text as="p">No other brand or part number is stored for these vehicles yet.</Text> : null}
+              </BlockStack>
+            </Card>
             <Card>
               <BlockStack gap="300">
                 {filter === "verified" && !filtered.length ? <Text as="p">This item has no verified vehicles. Use the search above to add it to a vehicle that another item already uses. The new row stays unverified.</Text> : null}
@@ -444,19 +464,23 @@ export default function CatalogueFitmentReview() {
                   resourceName={{ singular: "fitment", plural: "fitments" }}
                   itemCount={pageRows.length}
                   selectable={false}
-                  headings={[{ title: "Select" }, { title: "Vehicle" }, { title: "Canonical key" }, { title: "Evidence" }, { title: "Trust" }]}
+                  headings={[{ title: "Select" }, { title: "Brand / part number" }, { title: "Vehicle" }, { title: "Conflict" }, { title: "Action" }]}
                 >
                   {pageRows.map((row, index) => {
                     const key = text(row.vehicle_key);
+                    const rowId = text(row.id) ? `fitment:${row.id}` : key || String(index);
+                    const part = [row.brand || review?.brand, row.mpn || review?.mpn].map(text).filter(Boolean).join(" · ") || text(review?.sku);
                     return (
-                      <IndexTable.Row id={key || String(index)} key={key || index} position={index}>
+                      <IndexTable.Row id={rowId} key={rowId} position={index}>
                         <IndexTable.Cell>
-                          <Checkbox label="" checked={selected.includes(key)} onChange={(on) => toggle(key, on)} />
+                          <Checkbox label={`Select ${part || key}`} checked={Boolean(key) && selected.includes(key)} onChange={(on) => toggle(key, on)} />
                         </IndexTable.Cell>
-                        <IndexTable.Cell>{[row.make, row.model, row.generation, row.engine || row.engine_code].map(text).filter(Boolean).join(" · ") || text(row.vehicle) || "—"}</IndexTable.Cell>
-                        <IndexTable.Cell>{key || "—"}</IndexTable.Cell>
-                        <IndexTable.Cell>{text(row.evidence_type) || "—"}</IndexTable.Cell>
-                        <IndexTable.Cell>{text(row.trust_class || row.trust_level) || "—"}</IndexTable.Cell>
+                        <IndexTable.Cell>{part || "—"}</IndexTable.Cell>
+                        <IndexTable.Cell>{[row.make, row.model, row.generation, row.engine || row.engine_code].map(text).filter(Boolean).join(" · ") || text(row.vehicle) || key || "—"}</IndexTable.Cell>
+                        <IndexTable.Cell>{text(row.conflict_reason) || rowStatus(row)}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {key ? <Decision actionName="verify" label="Verify this item" sku={text(review?.sku || sku)} vehicleKey={key} /> : null}
+                        </IndexTable.Cell>
                       </IndexTable.Row>
                     );
                   })}

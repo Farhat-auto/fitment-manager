@@ -31,6 +31,9 @@ assert.match(ui, /add_same_vehicle/);
 assert.match(ui, /A different item can be selected for the same vehicle/);
 assert.match(ui, /verification_status: "UNVERIFIED"/);
 assert.match(ui, /Other items on those vehicles were left as they are/);
+assert.match(ui, /A different brand or part number can fit the same car/);
+assert.match(ui, /Verify this item/);
+assert.match(ui, /same_car_items/);
 assert.doesNotMatch(ui, /add_same_vehicle[\s\S]{0,500}verification_status: "VERIFIED"/);
 
 console.log("PASS catalogue fitment review");
