@@ -11,6 +11,7 @@ const ACTIONS = new Set([
   "needs_review",
   "bulk_verify_authoritative",
   "bulk_reject",
+  "bulk_review_selected",
 ]);
 
 function text(value: unknown) {
@@ -47,6 +48,15 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "canonical_vehicle_key_required" }, { status: 400 });
   }
   const actor = text((session as { email?: string; shop?: string }).email || session.shop || "shopify-admin");
-  const review = await oceanPost("/fitment-review", { action: actionName, sku, vehicle_key, actor, reason });
+  const vehicleKeys = text(fd.get("vehicle_keys")).split(",").map((item) => item.trim()).filter(Boolean);
+  const review = await oceanPost("/fitment-review", {
+    action: actionName,
+    review_action: text(fd.get("review_action")),
+    sku,
+    vehicle_key,
+    vehicle_keys: vehicleKeys,
+    actor,
+    reason,
+  });
   return json(review, { status: statusFor(review) });
 }

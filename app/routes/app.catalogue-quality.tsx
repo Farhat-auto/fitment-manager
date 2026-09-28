@@ -164,6 +164,7 @@ export default function CatalogueQuality() {
               <p>
                 {data.activeTotal} records. Showing {Math.min(data.activeTotal, SAMPLE)}. Legacy keys are not deleted or rewritten. This report does not verify anything.
               </p>
+              {data.bucket === "legacy" ? <Link to={appHref("/app/legacy-migration", location.search || "")}>Open legacy migration queue</Link> : null}
             </Banner>
             <Rows title={selected.title} rows={data.activeRows as Array<Record<string, unknown>>} review={review} empty={selected.empty} />
           </BlockStack>
