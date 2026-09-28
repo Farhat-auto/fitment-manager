@@ -204,12 +204,16 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.doesNotMatch(action, /Loading car fitment/);
   assert.match(action, /render\(<FitmentGuard mode="action" \/>, document\.body\)/);
   assert.match(action, /stale\[index\]\.remove\(\)/);
-  assert.match(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
+  assert.doesNotMatch(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
+  assert.doesNotMatch(source("extensions/car-fitment/src/guard.jsx"), /Download import template/);
   assert.match(block, /@shopify\/ui-extensions\/preact/);
   const app = source("extensions/car-fitment/src/FitmentApp.jsx");
   assert.match(app, /@shopify\/ui-extensions\/preact/);
   assert.match(app, /loading: false/);
-  assert.match(app, /select-products/);
+  assert.match(app, /Search products linked to a vehicle/);
+  assert.match(app, /\/products\?/);
+  assert.match(app, /vehicle_key: engineId/);
+  assert.match(app, /loadMakes\(\)/);
   assert.match(app, /has_vehicles=0/);
   assert.match(app, /selectedProductIds/);
   assert.match(source("extensions/car-fitment/src/selection.js"), /Array\.isArray/);
@@ -254,6 +258,7 @@ check("OE family never copies fitment", () => {
   const bff = source("app/routes/api.ocean.$.ts");
   assert.match(bff, /oe-family/);
   assert.match(bff, /product-review/);
+  assert.match(bff, /"products"/);
 });
 
 check("legacy writes are disabled", () => {
