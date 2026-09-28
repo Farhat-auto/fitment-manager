@@ -13,6 +13,10 @@ assert.match(car, /pickedMakes/);
 assert.match(car, /Find a make/);
 assert.doesNotMatch(car, /oceanGet\("\/makes"\)/);
 assert.match(car, /Selected makes/);
+assert.match(car, /pickedModels/);
+assert.match(car, /Find a model/);
+assert.match(car, /Selected models/);
+assert.doesNotMatch(car, /label="Model"/);
 
 assert.match(product, /ItemClassification/);
 assert.match(product, /classification_options/);

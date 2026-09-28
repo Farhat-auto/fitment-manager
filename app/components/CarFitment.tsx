@@ -135,10 +135,13 @@ export function CarFitmentPanel({
   const [models, setModels] = React.useState<Array<{ id: string; name?: string; title?: string; type_count?: number; make_id?: string; make_name?: string }>>([]);
   const makesRef = React.useRef(makes);
   makesRef.current = makes;
+  const modelsRef = React.useRef(models);
+  modelsRef.current = models;
   const [generations, setGenerations] = React.useState<Array<{ id: string; name: string; year_range?: string }>>([]);
   const [engines, setEngines] = React.useState<VehicleRow[]>([]);
-  const [makeId, setMakeId] = React.useState("");
-  const [modelId, setModelId] = React.useState("");
+  const [pickedModels, setPickedModels] = React.useState<string[]>([]);
+  const [modelQuery, setModelQuery] = React.useState("");
+  const [enginesBusy, setEnginesBusy] = React.useState(false);
   const [generationId, setGenerationId] = React.useState("");
   const [engineId, setEngineId] = React.useState("");
   const [checked, setChecked] = React.useState<Record<string, boolean>>({});
@@ -184,10 +187,10 @@ export function CarFitmentPanel({
     setPosition("");
     setSide("");
     setNote("");
-    setMakeId("");
     setPickedMakes([]);
     setMakeQuery("");
-    setModelId("");
+    setPickedModels([]);
+    setModelQuery("");
     setGenerationId("");
     setEngineId("");
     setModels([]);
@@ -276,7 +279,13 @@ export function CarFitmentPanel({
           if (make) return make;
           return String(left.name || left.title || "").localeCompare(String(right.name || right.title || ""));
         });
-        setModels(rows as Array<{ id: string; name?: string; title?: string; type_count?: number; make_id?: string; make_name?: string }>);
+        const next = rows as Array<{ id: string; name?: string; title?: string; type_count?: number; make_id?: string; make_name?: string }>;
+        setModels(next);
+        const allowed = new Set(next.map((row) => `${row.make_id || ""}|${row.id}`));
+        setPickedModels((current) => {
+          const kept = current.filter((key) => allowed.has(key));
+          return kept.length === current.length ? current : kept;
+        });
         setModelsBusy(false);
       })
       .catch((err) => {
@@ -293,43 +302,102 @@ export function CarFitmentPanel({
     setPickedMakes((current) => (
       on ? (current.includes(id) ? current : [...current, id]) : current.filter((item) => item !== id)
     ));
-    if (!on && makeId === id) {
-      setMakeId("");
-      setModelId("");
+    if (!on) {
+      setPickedModels((current) => current.filter((key) => !key.startsWith(`${id}|`)));
       setGenerationId("");
       setEngineId("");
-      setGenerations([]);
-      setEngines([]);
       setChecked({});
     }
   };
 
-  const onModel = async (value: string) => {
-    const [nextMake, nextModel] = String(value || "").split("|");
-    setMakeId(nextMake || "");
-    setModelId(nextModel || "");
+  const toggleModel = (key: string, on: boolean) => {
+    setPickedModels((current) => (
+      on ? (current.includes(key) ? current : [...current, key]) : current.filter((item) => item !== key)
+    ));
     setGenerationId("");
     setEngineId("");
-    setGenerations([]);
-    setEngines([]);
     setChecked({});
-    if (!nextMake || !nextModel) return;
-    const gens = await oceanList("/generations?" + qs({ make_id: nextMake, model_id: nextModel }), ["generations"]);
-    setGenerations(gens as Array<{ id: string; name: string; year_range?: string }>);
-    const rows = await oceanList("/engines?" + qs({ make_id: nextMake, model_id: nextModel }), ["engines", "types"]);
-    setEngines(rows as VehicleRow[]);
   };
 
-  const onGeneration = async (value: string) => {
+  React.useEffect(() => {
+    let cancelled = false;
+    if (pickedModels.length !== 1) {
+      setGenerations([]);
+      return;
+    }
+    const [make, model] = pickedModels[0].split("|");
+    if (!make || !model) return;
+    oceanList("/generations?" + qs({ make_id: make, model_id: model }), ["generations"])
+      .then((rows) => {
+        if (!cancelled) setGenerations(rows as Array<{ id: string; name: string; year_range?: string }>);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(String(err?.message || err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickedModels]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!pickedModels.length) {
+      setEngines([]);
+      setEnginesBusy(false);
+      return;
+    }
+    setEngines([]);
+    setEnginesBusy(true);
+    const generation = pickedModels.length === 1 ? generationId : "";
+    const load = async () => {
+      const groups: VehicleRow[][] = [];
+      for (let index = 0; index < pickedModels.length; index += 4) {
+        const chunk = pickedModels.slice(index, index + 4);
+        const loaded = await Promise.all(chunk.map(async (key) => {
+          const [make, model] = key.split("|");
+          const known = modelsRef.current.find((row) => `${row.make_id || ""}|${row.id}` === key);
+          const rows = await oceanList(
+            "/engines?" + qs({ make_id: make, model_id: model, generation_id: generation || undefined }),
+            ["engines", "types"],
+          );
+          return (rows as VehicleRow[]).map((row) => ({
+            ...row,
+            make_name: String(row.make_name || known?.make_name || ""),
+            model_name: String(row.model_name || known?.name || known?.title || ""),
+          }));
+        }));
+        groups.push(...loaded);
+      }
+      const seen = new Set<string>();
+      const flat: VehicleRow[] = [];
+      groups.flat().forEach((row) => {
+        const id = String(row.vehicle_key || row.vehicle_id || row.id || "");
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        flat.push(row);
+      });
+      return flat;
+    };
+    load()
+      .then((rows) => {
+        if (cancelled) return;
+        setEngines(rows);
+        setEnginesBusy(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setEnginesBusy(false);
+        setError(String(err?.message || err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickedModels, generationId]);
+
+  const onGeneration = (value: string) => {
     setGenerationId(value);
     setEngineId("");
     setChecked({});
-    if (!value || !makeId || !modelId) return;
-    const rows = await oceanList(
-      "/engines?" + qs({ make_id: makeId, model_id: modelId, generation_id: value }),
-      ["engines", "types"],
-    );
-    setEngines(rows as VehicleRow[]);
   };
 
   const runSearch = async (value: string) => {
@@ -367,7 +435,7 @@ export function CarFitmentPanel({
     if (payload && payload.ok !== false) {
       setChecked({});
       setEngineId("");
-      setStatus(`Added ${addIds.length} engine${addIds.length === 1 ? "" : "s"}. Choose another model or make to add more.`);
+      setStatus(`Added ${addIds.length} engine${addIds.length === 1 ? "" : "s"}. Tick more models or makes to add more.`);
     }
   };
 
@@ -408,21 +476,16 @@ export function CarFitmentPanel({
   const selectedMakeNames = pickedMakes
     .map((id) => makes.find((row) => row.id === id)?.name || id)
     .filter(Boolean);
-  const modelOptions = React.useMemo(() => {
-    const seen = new Set<string>();
-    const options = [{ label: "Select model", value: "" }];
-    models.forEach((row) => {
-      const value = `${row.make_id || ""}|${row.id}`;
-      if (!row.id || seen.has(value)) return;
-      seen.add(value);
-      const engines = Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : " · no engines";
-      options.push({
-        label: `${row.make_name ? `${row.make_name} · ` : ""}${row.name || row.title || row.id}${engines}`,
-        value,
-      });
-    });
-    return options;
-  }, [models]);
+  const visibleModels = models.filter((row) => {
+    const query = modelQuery.trim().toLowerCase();
+    const label = `${row.make_name || ""} ${row.name || row.title || row.id}`.toLowerCase();
+    return !query || label.includes(query);
+  });
+  const selectedModelNames = pickedModels.map((key) => {
+    const row = models.find((item) => `${item.make_id || ""}|${item.id}` === key);
+    if (!row) return "";
+    return `${row.make_name ? `${row.make_name} · ` : ""}${row.name || row.title || row.id}`;
+  }).filter(Boolean);
   const fitments = listing.fitments || [];
   const count = listing.count || fitments.length;
   const sources = listing.sources || [{ id: "manual", label: "Manual" }];
@@ -593,16 +656,50 @@ export function CarFitmentPanel({
               <Text as="p" variant="bodySm">No make matches that name.</Text>
             ) : null}
             {modelsBusy ? <Text as="p" variant="bodySm">Loading models for the selected makes…</Text> : null}
-            <Select
-              label="Model"
-              disabled={!pickedMakes.length || modelsBusy}
-              options={modelOptions}
-              value={makeId && modelId ? `${makeId}|${modelId}` : ""}
-              onChange={onModel}
+            <TextField
+              label="Find a model"
+              value={modelQuery}
+              placeholder="Defender, Range Rover, Discovery"
+              autoComplete="off"
+              disabled={!pickedMakes.length}
+              onChange={setModelQuery}
+              helpText={pickedMakes.length
+                ? `${models.length} models · ${pickedModels.length} selected. Tick every model this article fits.`
+                : "Select one or more makes first."}
             />
+            {selectedModelNames.length ? (
+              <Text as="p" variant="bodySm">
+                Selected models: {selectedModelNames.join(", ")}
+              </Text>
+            ) : null}
+            <div style={{ maxHeight: 240, overflow: "auto" }}>
+              <BlockStack gap="100">
+                {visibleModels.map((row) => {
+                  const key = `${row.make_id || ""}|${row.id}`;
+                  const engines = Number(row.type_count) > 0 ? ` · ${row.type_count} engines` : " · no engines";
+                  return (
+                    <Checkbox
+                      key={key}
+                      label={`${row.make_name ? `${row.make_name} · ` : ""}${row.name || row.title || row.id}${engines}`}
+                      checked={pickedModels.includes(key)}
+                      onChange={(value) => toggleModel(key, value)}
+                    />
+                  );
+                })}
+              </BlockStack>
+            </div>
+            {pickedMakes.length && !modelsBusy && !models.length ? (
+              <Text as="p" variant="bodySm">No models were returned for the selected makes.</Text>
+            ) : null}
+            {models.length && !visibleModels.length ? (
+              <Text as="p" variant="bodySm">No model matches that name.</Text>
+            ) : null}
             <Select
               label="Generation"
-              disabled={!modelId}
+              disabled={pickedModels.length !== 1}
+              helpText={pickedModels.length > 1
+                ? "Several models are selected, so every engine for those models is listed."
+                : "Optional. Choose a generation when one model is selected."}
               options={[
                 { label: "Select generation", value: "" },
                 ...generations.map((row) => ({
@@ -613,6 +710,7 @@ export function CarFitmentPanel({
               value={generationId}
               onChange={onGeneration}
             />
+            {enginesBusy ? <Text as="p" variant="bodySm">Loading engines for the selected models…</Text> : null}
             <InlineStack gap="200">
               <Button
                 disabled={!engines.length}
@@ -635,7 +733,8 @@ export function CarFitmentPanel({
             </InlineStack>
             {engines.map((row) => {
               const key = engineKey(row);
-              const label = [
+              const prefix = [row.make_name, row.model_name].filter(Boolean).join(" · ");
+              const detail = [
                 row.engine_code,
                 row.power_kw ? `${row.power_kw} kW` : "",
                 row.year_range,
@@ -643,10 +742,11 @@ export function CarFitmentPanel({
               ]
                 .filter(Boolean)
                 .join(" · ");
+              const label = [prefix, row.checkbox_label || detail].filter(Boolean).join(" · ") || key;
               return (
                 <Checkbox
                   key={key}
-                  label={row.checkbox_label || label || key}
+                  label={label}
                   checked={!!checked[key]}
                   onChange={(val) =>
                     setChecked((current) => {
