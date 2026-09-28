@@ -298,7 +298,7 @@ export default function ProductCarFitment() {
             Brand+MPN before adding compatibility.
           </Banner>
         ) : (
-          <CarFitmentPanel article={article} initialListing={listing as any} />
+          <CarFitmentPanel article={article} initialListing={listing as any} imageUrl={imageUrl} />
         )}
       </BlockStack>
     </Page>
