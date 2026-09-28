@@ -24,6 +24,12 @@ const ALLOWED = new Set([
   "product-review",
   "analyse",
   "storefront-compatibility",
+  "article-candidates",
+  "article-search",
+  "article-map",
+  "map-article",
+  "article-create",
+  "create-article",
 ]);
 
 function preflight() {
@@ -75,7 +81,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!ALLOWED.has(name)) {
     return cors(json({ ok: false, error: "not_found", path: name }, { status: 404 }));
   }
-  if (name === "product-review" || name === "analyse" || name === "oe-family") {
+  if (
+    name === "product-review"
+    || name === "analyse"
+    || name === "oe-family"
+    || name === "article-map"
+    || name === "map-article"
+    || name === "article-create"
+    || name === "create-article"
+  ) {
     let body: Record<string, unknown> = {};
     try {
       body = (await request.json()) as Record<string, unknown>;

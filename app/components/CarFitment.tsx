@@ -12,6 +12,7 @@ import {
   TextField,
   Thumbnail,
 } from "@shopify/polaris";
+import { CatalogueArticleLink } from "./CatalogueArticleLink";
 import {
   UNVERIFIED,
   VERIFIED,
@@ -229,7 +230,12 @@ export function CarFitmentPanel({
       const payload = await oceanPost({ ...identity, ...body });
       setBusy(false);
       if (!payload || payload.ok === false) {
-        setError(payload?.error || "Could not update car fitment.");
+        const code = String(payload?.error || "");
+        setError(
+          code === "unmapped"
+            ? "This Shopify product is not linked to an Ocean catalogue article, so the vehicles were not saved."
+            : code || "Could not update car fitment.",
+        );
         return payload;
       }
       if (!listingBelongsTo(payload, identity)) {
@@ -531,7 +537,27 @@ export function CarFitmentPanel({
         </BlockStack>
       </Card>
 
-      {error ? (
+      {listing.unmapped || error === "unmapped" ? (
+        <CatalogueArticleLink
+          shopifyProductId={article.numericId}
+          shopifyVariantId={article.variantNumericId}
+          sku={article.sku}
+          brand={article.vendor}
+          mpn={article.mpn}
+          barcode={article.barcode}
+          handle={article.handle}
+          onLinked={(payload) => {
+            if (!listingBelongsTo(payload, identity)) {
+              setError("stale product payload ignored");
+              return;
+            }
+            setListing(payload as Listing);
+            setError("");
+            setStatus("Catalogue article linked. Tick makes, models, and engines, then add them.");
+          }}
+        />
+      ) : null}
+      {error && error !== "unmapped" ? (
         <Banner tone="critical" title="CAR FITMENT">
           {error}
         </Banner>
@@ -638,7 +664,12 @@ export function CarFitmentPanel({
                 Selected makes: {selectedMakeNames.join(", ")}
               </Text>
             ) : null}
-            <div style={{ maxHeight: 240, overflow: "auto" }}>
+            {!makesReady ? <Text as="p" variant="bodySm">Loading makes…</Text> : null}
+            {makesReady && !makes.length ? <Text as="p" variant="bodySm">No makes were returned.</Text> : null}
+            {makes.length && !visibleMakes.length ? (
+              <Text as="p" variant="bodySm">No make matches that name.</Text>
+            ) : null}
+            <div style={{ maxHeight: pickedMakes.length ? 140 : 240, overflow: "auto" }}>
               <BlockStack gap="100">
                 {visibleMakes.map((row) => (
                   <Checkbox
@@ -650,11 +681,6 @@ export function CarFitmentPanel({
                 ))}
               </BlockStack>
             </div>
-            {!makesReady ? <Text as="p" variant="bodySm">Loading makes…</Text> : null}
-            {makesReady && !makes.length ? <Text as="p" variant="bodySm">No makes were returned.</Text> : null}
-            {makes.length && !visibleMakes.length ? (
-              <Text as="p" variant="bodySm">No make matches that name.</Text>
-            ) : null}
             {modelsBusy ? <Text as="p" variant="bodySm">Loading models for the selected makes…</Text> : null}
             <TextField
               label="Find a model"

@@ -17,6 +17,19 @@ assert.match(car, /pickedModels/);
 assert.match(car, /Find a model/);
 assert.match(car, /Selected models/);
 assert.doesNotMatch(car, /label="Model"/);
+assert.match(car, /CatalogueArticleLink/);
+assert.match(car, /not linked to an Ocean catalogue article/);
+
+const link = readFileSync("app/components/CatalogueArticleLink.tsx", "utf8");
+const proxy = readFileSync("app/routes/api.ocean.$.ts", "utf8");
+assert.match(link, /article-candidates/);
+assert.match(link, /\/article-map/);
+assert.match(link, /\/article-create/);
+assert.match(link, /confirm: true/);
+assert.match(link, /discovery evidence, not identity/);
+assert.match(proxy, /article-candidates/);
+assert.match(proxy, /article-create/);
+assert.match(proxy, /article-map/);
 
 assert.match(product, /ItemClassification/);
 assert.match(product, /classification_options/);
