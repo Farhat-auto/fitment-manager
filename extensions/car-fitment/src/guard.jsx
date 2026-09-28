@@ -27,9 +27,6 @@ export class FitmentGuard extends Component {
         return (
           <s-admin-action heading="CAR FITMENT" loading={false}>
             <s-banner tone="critical">{this.state.error}</s-banner>
-            <s-link href="https://fitment-manager.vercel.app/fitment-application-template.csv" target="_blank">
-              Download import template
-            </s-link>
             <s-button slot="primary-action" onClick={closeAction}>
               Close
             </s-button>

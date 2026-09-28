@@ -15,7 +15,20 @@ function qs(params) {
     .join("&");
 }
 
-const TEMPLATE_URL = "https://fitment-manager.vercel.app/fitment-application-template.csv";
+function adminProductHref(id) {
+  const numeric = String(id || "").split("/").pop();
+  if (!numeric) return "";
+  let shop = "";
+  try {
+    const cfg = (typeof shopify === "undefined" ? {} : shopify && shopify.config) || {};
+    shop = cfg.shop || cfg.shopDomain || "";
+  } catch (err) {
+    shop = "";
+  }
+  const handle = String(shop).replace(/\.myshopify\.com$/i, "");
+  if (!handle) return "";
+  return "https://admin.shopify.com/store/" + encodeURIComponent(handle) + "/products/" + encodeURIComponent(numeric);
+}
 
 export function FitmentApp({ mode }) {
   const shop = typeof shopify === "undefined" ? {} : shopify || {};
@@ -48,6 +61,10 @@ export function FitmentApp({ mode }) {
   const [models, setModels] = useState([]);
   const [generations, setGenerations] = useState([]);
   const [engines, setEngines] = useState([]);
+  const [linkedProducts, setLinkedProducts] = useState([]);
+  const [linkedBusy, setLinkedBusy] = useState(false);
+  const [linkedMiss, setLinkedMiss] = useState(false);
+  const [catalogueNote, setCatalogueNote] = useState("");
   const [makeId, setMakeId] = useState("");
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
@@ -137,6 +154,20 @@ export function FitmentApp({ mode }) {
   });
 
   useEffect(() => {
+    let cancelled = false;
+    loadMakes()
+      .then((rows) => {
+        if (!cancelled) setMakes(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogueNote(i18n.translate("ladder-error"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     let ids = [];
     try {
       const current = typeof shopify === "undefined" ? {} : shopify || {};
@@ -190,18 +221,41 @@ export function FitmentApp({ mode }) {
         setPhase("error");
         setError((err && err.message) || "This product could not be loaded.");
       });
-    loadMakes()
-      .then((rows) => {
-        if (!cancelled) setMakes(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setError(i18n.translate("ladder-error"));
-      });
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
   }, [pickedIds.join("|")]);
+
+  useEffect(() => {
+    if (!engineId) {
+      setLinkedProducts([]);
+      setLinkedBusy(false);
+      setLinkedMiss(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedBusy(true);
+    setLinkedMiss(false);
+    catalogueGet("/products?" + qs({ vehicle_key: engineId }))
+      .then((payload) => {
+        if (cancelled) return;
+        const rows = payload && Array.isArray(payload.products) ? payload.products : null;
+        setLinkedProducts(rows || []);
+        setLinkedMiss(rows == null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLinkedProducts([]);
+        setLinkedMiss(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLinkedBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [engineId]);
 
   useEffect(() => {
     if (!product) return;
@@ -505,21 +559,19 @@ export function FitmentApp({ mode }) {
           </s-option>
         ))}
       </s-select>
-      {view === "add" ? (
-        <s-select
-          label={i18n.translate("engine-label")}
-          value={engineId}
-          onChange={(event) => setEngineId(event.currentTarget.value)}
-          disabled={!modelId}
-        >
-          <s-option value="">{i18n.translate("select-engine")}</s-option>
-          {engines.map((row) => (
-            <s-option value={row.vehicle_key || row.vehicle_id || row.id}>
-              {(row.detail || row.customer_label || row.name) + (row.year_range ? " · " + row.year_range : "")}
-            </s-option>
-          ))}
-        </s-select>
-      ) : null}
+      <s-select
+        label={i18n.translate("engine-label")}
+        value={engineId}
+        onChange={(event) => setEngineId(event.currentTarget.value)}
+        disabled={!modelId}
+      >
+        <s-option value="">{i18n.translate("select-engine")}</s-option>
+        {engines.map((row) => (
+          <s-option value={row.vehicle_key || row.vehicle_id || row.id}>
+            {(row.detail || row.customer_label || row.name) + (row.year_range ? " · " + row.year_range : "")}
+          </s-option>
+        ))}
+      </s-select>
     </s-stack>
   );
 
@@ -561,11 +613,39 @@ export function FitmentApp({ mode }) {
       ) : null}
 
       <s-stack gap="base">
-        {mode === "action" ? (
-          <s-link href={TEMPLATE_URL} download="fitment-application-template.csv" target="_blank">
-            Download import template
-          </s-link>
-        ) : null}
+        <s-stack gap="base">
+          <s-text>Search products linked to a vehicle</s-text>
+          {catalogueNote ? <s-banner tone="warning">{catalogueNote}</s-banner> : null}
+          {ladder}
+          {linkedBusy ? <s-text>Searching linked products…</s-text> : null}
+          {linkedMiss ? (
+            <s-banner tone="warning">Linked products could not be loaded for this vehicle.</s-banner>
+          ) : null}
+          {engineId && !linkedBusy && !linkedMiss && !linkedProducts.length ? (
+            <s-banner tone="warning">No products are linked to this vehicle.</s-banner>
+          ) : null}
+          {linkedProducts.map((row) => {
+            const href = adminProductHref(row.shopify_product_id);
+            const fit = row.fitment || {};
+            return (
+              <s-stack gap="small">
+                <s-text>
+                  {(row.brand || "—") + " · " + (row.sku || "—") + (row.mpn ? " · " + row.mpn : "")}
+                </s-text>
+                {row.name ? <s-text>{row.name}</s-text> : null}
+                <s-text>
+                  {(fit.label || fit.state || "Linked") +
+                    (row.shopify_product_id ? " · Shopify " + row.shopify_product_id : "")}
+                </s-text>
+                {href ? (
+                  <s-link href={href} target="_blank">
+                    Open product
+                  </s-link>
+                ) : null}
+              </s-stack>
+            );
+          })}
+        </s-stack>
         {products.length > 1 ? (
           <s-stack gap="small">
             <s-text>Selected Shopify products</s-text>
@@ -652,7 +732,6 @@ export function FitmentApp({ mode }) {
         </s-stack>
         {error ? <s-banner tone="critical">{error}</s-banner> : null}
         {status ? <s-banner tone="success">{status}</s-banner> : null}
-        {phase === "choose" ? <s-banner tone="warning">{i18n.translate("select-products")}</s-banner> : null}
         {phase === "loading" ? <s-text>{i18n.translate("loading")}</s-text> : null}
         {!count && view === "list" ? <s-banner tone="warning">{i18n.translate("zero")}</s-banner> : null}
 
@@ -707,7 +786,6 @@ export function FitmentApp({ mode }) {
                 </s-stack>
               );
             })}
-            {ladder}
             {view === "bulk"
               ? engines.map((row) => {
                   const key = row.vehicle_key || row.vehicle_id || row.id;

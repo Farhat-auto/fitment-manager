@@ -17,6 +17,7 @@ const ALLOWED = new Set([
   "vehicle-search",
   "search-vehicles",
   "vehicles",
+  "products",
   "product-fitment",
   "car-fitment",
   "fitments",
