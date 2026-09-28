@@ -22,12 +22,14 @@ export default function App() {
     <AppProvider apiKey={apiKey} isEmbeddedApp>
       <ui-nav-menu>
         <Link to="/app" rel="home">
-          Home
+          Dashboard
         </Link>
         <Link to="/app/products">Products</Link>
-        <Link to="/app/images">Images</Link>
-        <Link to="/app/import">Import</Link>
-        <Link to="/app/export">Export</Link>
+        <Link to="/app/vehicle-catalogue">Vehicle Catalogue</Link>
+        <Link to="/app/catalogue-fitment-review">Fitment Review</Link>
+        <Link to="/app/catalogue-quality">Catalogue Quality</Link>
+        <Link to="/app/application-import">Import</Link>
+        <Link to="/app/sync">Sync</Link>
         <Link to="/app/settings">Settings</Link>
       </ui-nav-menu>
       <Outlet />

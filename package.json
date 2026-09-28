@@ -21,7 +21,8 @@
     "test:fitment-index": "node --experimental-strip-types tests/fitment-index-state.test.ts",
     "test:sync-owner": "node --experimental-strip-types tests/sync-owner.test.ts && node --experimental-strip-types tests/sync-eligibility.test.ts && node --experimental-strip-types tests/fitment-storefront-sync.test.ts && node --experimental-strip-types tests/preview-fixture.test.ts",
     "test:catalogue-review": "node --experimental-strip-types tests/catalogue-fitment-review.test.ts",
-    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index && npm run test:sync-owner && npm run test:catalogue-review"
+    "test:admin-nav": "node --experimental-strip-types tests/admin-navigation.test.ts",
+    "test": "npm run test:ocean-identity && npm run test:embedded-nav && npm run test:fitment-throttle && npm run test:fitment-cascade && npm run test:fitment-index && npm run test:sync-owner && npm run test:catalogue-review && npm run test:admin-nav"
   },
   "dependencies": {
     "@remix-run/node": "^2.12.1",

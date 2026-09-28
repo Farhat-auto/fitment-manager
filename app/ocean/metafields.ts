@@ -10,6 +10,9 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
       category { name }
       featuredImage { url }
       fitmentCount: metafield(namespace: "ocean", key: "fitment_count") { value }
+      fitmentStatus: metafield(namespace: "ocean", key: "fitment_status") { value }
+      verifiedKeys: metafield(namespace: "ocean", key: "verified_vehicle_keys") { value }
+      fitmentKeys: metafield(namespace: "custom", key: "fitment_keys") { value }
       mpn: metafield(namespace: "custom", key: "mpn") { value }
       oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
       legacyVehicles: metafield(namespace: "fitment", key: "vehicles") { value }

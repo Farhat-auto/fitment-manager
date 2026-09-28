@@ -29,6 +29,11 @@ import {
 } from "../utils/catalogMetaobjectParents.server";
 import { appHref } from "../embedded-nav";
 
+function numericProductId(gid: string) {
+  const id = String(gid || "").split("/").pop() || "";
+  return /^\d+$/.test(id) ? id : "";
+}
+
 type Option = { value: string; label: string };
 
 /** System group metaobject may reference its parent `catalog_main_category` (field varies by store). */
@@ -1136,11 +1141,27 @@ export default function Products() {
                     </InlineStack>
 
                     <InlineStack gap="200" wrap>
+                      {numericProductId(String(p.id || "")) ? (
+                        <RemixLink
+                          to={appHref(`/app/products/${numericProductId(String(p.id || ""))}`, location.search || "")}
+                          style={{ textDecoration: "none" }}
+                        >
+                          <Button variant="primary">Open product</Button>
+                        </RemixLink>
+                      ) : null}
+                      {p.sku ? (
+                        <RemixLink
+                          to={appHref("/app/catalogue-fitment-review", `sku=${encodeURIComponent(p.sku)}${location.search ? `&${location.search.replace(/^\?/, "")}` : ""}`)}
+                          style={{ textDecoration: "none" }}
+                        >
+                          <Button>Fitment Review</Button>
+                        </RemixLink>
+                      ) : null}
                       <RemixLink
                         to={appHref(`/app/fitment/${encodeURIComponent(p.handle)}`, location.search || "")}
                         style={{ textDecoration: "none" }}
                       >
-                        <Button variant="primary">Manage Fitment</Button>
+                        <Button>Legacy fitment</Button>
                       </RemixLink>
                       <Button
                         onClick={() => {
