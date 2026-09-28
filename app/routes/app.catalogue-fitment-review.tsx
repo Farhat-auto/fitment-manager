@@ -5,7 +5,7 @@ import { Badge, Banner, BlockStack, Button, Card, Checkbox, IndexTable, InlineSt
 import { appHref } from "../embedded-nav";
 import * as React from "react";
 import { authenticate } from "../shopify.server";
-import { oceanGet, oceanPost } from "../ocean/client.server.ts";
+import { oceanGet, oceanPost, oceanProductFitmentPost } from "../ocean/client.server.ts";
 
 type FitmentRow = {
   id?: string | number;
@@ -49,6 +49,20 @@ type ReviewPayload = {
   conflicts?: FitmentRow[];
   oe_numbers?: Array<{ number?: string }>;
   cross_references?: Array<{ brand?: string; number?: string }>;
+  add_result?: { ok?: boolean; error?: string; added_count?: number; requested?: number };
+};
+
+type VehicleHit = {
+  id?: string;
+  vehicle_id?: string;
+  vehicle_key?: string;
+  title?: string;
+  checkbox_label?: string;
+  make_name?: string;
+  model_name?: string;
+  generation_name?: string;
+  engine_code?: string;
+  year_range?: string;
 };
 
 function text(value: unknown) {
@@ -68,6 +82,28 @@ export async function action({ request }: ActionFunctionArgs) {
   const actionName = text(fd.get("action"));
   const sku = text(fd.get("sku"));
   const vehicle_key = text(fd.get("vehicle_key"));
+  const vehicleKeys = text(fd.get("vehicle_keys")).split(",").map((item) => item.trim()).filter(Boolean);
+  if (actionName === "add_same_vehicle") {
+    const keys = vehicleKeys.filter((key) => /^ovh-[a-f0-9]+$/i.test(key));
+    if (!sku || !keys.length) return json({ ok: false, error: "canonical_vehicle_key_required", sku }, { status: 400 });
+    const listing = await oceanProductFitmentPost({
+      action: "add",
+      sku,
+      vehicle_ids: keys,
+      source: "manual",
+      verification_status: "UNVERIFIED",
+    }) as { ok?: boolean; error?: string; added_count?: number };
+    const review = await oceanGet("/fitment-review", new URLSearchParams({ sku }).toString());
+    return json({
+      ...(review && typeof review === "object" ? review : { sku }),
+      add_result: {
+        ok: listing?.ok !== false && !listing?.error,
+        error: text(listing?.error),
+        added_count: Number(listing?.added_count || 0),
+        requested: keys.length,
+      },
+    });
+  }
   if (!["verify", "reject", "delete", "conflict", "needs_review", "bulk_verify_authoritative", "bulk_review_selected"].includes(actionName)) {
     return json({ ok: false, error: "unsupported_action" }, { status: 400 });
   }
@@ -75,7 +111,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "canonical_vehicle_key_required" }, { status: 400 });
   }
   const actor = text((session as { email?: string; shop?: string }).email || session.shop || "shopify-admin");
-  const vehicleKeys = text(fd.get("vehicle_keys")).split(",").map((item) => item.trim()).filter(Boolean);
   const review = await oceanPost("/fitment-review", {
     action: actionName,
     review_action: text(fd.get("review_action")),
@@ -102,6 +137,81 @@ const FILTERS = [
 
 function rowStatus(row: FitmentRow) {
   return text(row.review_status).toLowerCase() || "candidate";
+}
+
+function explainError(error: string) {
+  if (error === "conflict_requires_resolution") {
+    return "This row is a conflict, so it cannot be set to verified. A different item can still be added to that same vehicle.";
+  }
+  if (error === "unmapped" || error === "product_not_found") {
+    return "This SKU is not a catalogue article, so the vehicle was not added.";
+  }
+  if (error === "canonical_vehicle_key_required") {
+    return "Choose a canonical ovh vehicle. Another item may already use it.";
+  }
+  return error;
+}
+
+function vehicleHitKey(row: VehicleHit) {
+  return text(row.vehicle_key || row.vehicle_id || row.id);
+}
+
+function vehicleHitLabel(row: VehicleHit) {
+  return text(row.checkbox_label || row.title) || [row.make_name, row.model_name, row.generation_name, row.engine_code, row.year_range].map(text).filter(Boolean).join(" · ") || vehicleHitKey(row);
+}
+
+function SameVehiclePicker({ sku }: { sku: string }) {
+  const [query, setQuery] = React.useState("");
+  const [hits, setHits] = React.useState<VehicleHit[]>([]);
+  const [picked, setPicked] = React.useState<string[]>([]);
+  const [searchError, setSearchError] = React.useState("");
+  const search = async (value: string) => {
+    setQuery(value);
+    if (value.trim().length < 2) {
+      setHits([]);
+      return;
+    }
+    try {
+      const res = await fetch("/api/ocean/vehicle-search?q=" + encodeURIComponent(value.trim()));
+      const payload = await res.json();
+      setHits(Array.isArray(payload.results) ? payload.results : []);
+      setSearchError(text(payload.error));
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Vehicle search failed");
+    }
+  };
+  const toggle = (key: string, on: boolean) => {
+    setPicked((current) => on ? Array.from(new Set(current.concat(key))) : current.filter((item) => item !== key));
+  };
+  return (
+    <Card>
+      <BlockStack gap="300">
+        <Text as="h2" variant="headingMd">Add this item to a vehicle</Text>
+        <Text as="p">A different item can be selected for the same vehicle. Adding {sku} does not change the other item, and this row stays unverified.</Text>
+        <TextField label="Search vehicle" value={query} onChange={(value) => { search(value).catch(() => setSearchError("Vehicle search failed")); }} autoComplete="off" placeholder="W205, E90 335i, engine code" />
+        {searchError ? <Banner tone="critical"><p>{explainError(searchError)}</p></Banner> : null}
+        {hits.map((row) => {
+          const key = vehicleHitKey(row);
+          const canonical = /^ovh-[a-f0-9]+$/i.test(key);
+          return (
+            <Checkbox
+              key={key || vehicleHitLabel(row)}
+              label={canonical ? vehicleHitLabel(row) : `${vehicleHitLabel(row)} (canonical vehicle required)`}
+              checked={canonical && picked.includes(key)}
+              disabled={!canonical}
+              onChange={(on) => toggle(key, on)}
+            />
+          );
+        })}
+        <Form method="post">
+          <input type="hidden" name="action" value="add_same_vehicle" />
+          <input type="hidden" name="sku" value={sku} />
+          <input type="hidden" name="vehicle_keys" value={picked.join(",")} />
+          <Button submit variant="primary" disabled={!picked.length}>Add this item to the selected vehicles</Button>
+        </Form>
+      </BlockStack>
+    </Card>
+  );
 }
 
 function matchesFilter(row: FitmentRow, filter: string) {
@@ -203,7 +313,10 @@ export default function CatalogueFitmentReview() {
   const [selected, setSelected] = React.useState<string[]>([]);
   const [groupRows, setGroupRows] = React.useState(true);
   const bulkResult = result && Array.isArray(result.blocked) ? result : null;
-  const review = (bulkResult ? data.review : (result && (result.ok || result.error || result.sku) ? result : data.review)) as ReviewPayload | null;
+  const returnedReview = result && !bulkResult && (Array.isArray(result.candidate_fitments) || result.name) ? result : null;
+  const review = (returnedReview || data.review) as ReviewPayload | null;
+  const addResult = result?.add_result;
+  const actionError = text(addResult?.error || (!returnedReview && !bulkResult ? result?.error : ""));
   const candidates = Array.isArray(review?.candidate_fitments) ? review.candidate_fitments : [];
   const conflicts = Array.isArray(review?.conflicts) ? review.conflicts : [];
   const allRows = candidates
@@ -216,6 +329,11 @@ export default function CatalogueFitmentReview() {
   const toggle = (key: string, on: boolean) => {
     setSelected((current) => on ? Array.from(new Set(current.concat(key))) : current.filter((item) => item !== key));
   };
+  const reviewSku = text(review?.sku || data.sku);
+  React.useEffect(() => {
+    setSelected([]);
+    setPage(0);
+  }, [reviewSku]);
   const oes = (review?.oe_numbers || []).map((row) => text(row.number)).filter(Boolean);
   const refs = (review?.cross_references || []).map((row) => text(row.number)).filter(Boolean);
   return (
@@ -229,7 +347,17 @@ export default function CatalogueFitmentReview() {
             </BlockStack>
           </Form>
         </Card>
-        {review?.error ? <Banner tone="critical"><p>{text(review.error)}</p></Banner> : null}
+        {actionError ? <Banner tone="critical"><p>{explainError(actionError)}</p></Banner> : null}
+        {!actionError && review?.error ? <Banner tone="critical"><p>{explainError(text(review.error))}</p></Banner> : null}
+        {addResult && !addResult.error ? (
+          <Banner tone={addResult.added_count ? "success" : "warning"}>
+            <p>
+              {addResult.added_count
+                ? `Added this item to ${addResult.added_count} vehicle${addResult.added_count === 1 ? "" : "s"}. Other items on those vehicles were left as they are. The new rows are not verified.`
+                : "No new vehicle was added. This item may already be on that vehicle, or the vehicle is not in the catalogue."}
+            </p>
+          </Banner>
+        ) : null}
         {review?.ok ? (
           <BlockStack gap="400">
             <Card>
@@ -258,8 +386,10 @@ export default function CatalogueFitmentReview() {
                 </Form>
               </BlockStack>
             </Card>
+            <SameVehiclePicker sku={text(review.sku || sku)} />
             <Card>
               <BlockStack gap="300">
+                {filter === "verified" && !filtered.length ? <Text as="p">This item has no verified vehicles. Use the search above to add it to a vehicle that another item already uses. The new row stays unverified.</Text> : null}
                 <InlineStack gap="200" wrap>
                   <Select label="Filter" options={FILTERS} value={filter} onChange={(value) => { setFilter(value); setPage(0); }} />
                   <TextField label="Search make, model, generation, engine, kW, year, key, source, or evidence" value={query} onChange={(value) => { setQuery(value); setPage(0); }} autoComplete="off" />
