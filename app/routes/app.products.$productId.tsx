@@ -1,10 +1,10 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
-import { Banner, BlockStack, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
+import { Link, useLoaderData, useLocation, useNavigate } from "@remix-run/react";
+import { Badge, Banner, BlockStack, Button, Card, InlineStack, Page, Text, Thumbnail } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { CarFitmentPanel } from "../components/CarFitment";
-import { oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
+import { oceanGet, oceanProductFitmentGet, oceanProductFitmentPost } from "../ocean/client.server";
 import { stableIdentity } from "../ocean/identity";
 import { catalogueFitmentMetafields, verifiedVehicleKeys, METAFIELDS_SET, PRODUCT_IDENTITY_QUERY, productFromAdminNode } from "../ocean/metafields";
 import { appHref } from "../embedded-nav";
@@ -55,6 +55,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const listing = resolved.ok
     ? await oceanProductFitmentGet(resolved.identity)
     : resolved;
+  const review = article.sku
+    ? await oceanGet("/fitment-review", new URLSearchParams({ sku: article.sku }).toString())
+    : null;
   // Reconcile pre-sync products on read. This makes existing Ocean fitments
   // publish to Shopify without forcing the merchant to re-save every product.
   if (resolved.ok && listing && typeof (listing as any).count === "number" && gid) {
@@ -64,9 +67,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       },
     });
   }
+  const oceanArticle = (listing && typeof listing === "object" && (listing as { article?: Record<string, unknown> }).article) || {};
   return json({
     article,
     listing,
+    review,
+    imageUrl: String(node?.featuredImage?.url || (review as { image_url?: string } | null)?.image_url || ""),
+    shopifyFitment: {
+      count: String(node?.fitmentCount?.value || ""),
+      status: String(node?.fitmentStatus?.value || ""),
+      verifiedKeys: String(node?.verifiedKeys?.value || ""),
+      fitmentKeys: String(node?.fitmentKeys?.value || ""),
+    },
+    taxonomy: {
+      assembly: String(oceanArticle.assembly_group_id || ""),
+      category: String(oceanArticle.category_id || ""),
+      productGroup: String(oceanArticle.product_group_id || ""),
+      brand: String(oceanArticle.brand || article.vendor || ""),
+      mpn: String(oceanArticle.mpn || article.mpn || ""),
+    },
     ocean_endpoint: "/ocean-catalogue-manager/shopify-admin/product-fitment",
   });
 }
@@ -87,15 +106,37 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return json(payload);
 }
 
+function joinNumbers(rows: Array<{ number?: string; brand?: string }> | undefined, withBrand = false) {
+  return (rows || [])
+    .map((row) => [withBrand ? row.brand : "", row.number].filter(Boolean).join(" "))
+    .filter(Boolean)
+    .join(", ");
+}
+
 export default function ProductCarFitment() {
-  const { article, listing } = useLoaderData<typeof loader>();
+  const { article, listing, review, imageUrl, shopifyFitment, taxonomy } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const location = useLocation();
   const mapped = Boolean(article.numericId && (article.sku || article.vendor));
+  const loaded = review && (review as { ok?: boolean }).ok ? (review as {
+    oe_numbers?: Array<{ number?: string }>;
+    cross_references?: Array<{ brand?: string; number?: string }>;
+    candidate_fitments?: unknown[];
+    verified_fitments?: unknown[];
+    rejected_fitments?: unknown[];
+    conflicts?: unknown[];
+    brand?: string;
+    mpn?: string;
+    source?: string;
+  }) : null;
+  const reviewHref = appHref(
+    "/app/catalogue-fitment-review",
+    `sku=${encodeURIComponent(article.sku || "")}${location.search ? `&${location.search.replace(/^\?/, "")}` : ""}`,
+  );
 
   return (
     <Page
-      title="CAR FITMENT"
+      title={article.title || article.sku || "Product"}
       backAction={{
         content: "Back to Products",
         onAction: () => navigate(appHref("/app/products", location.search || "")),
@@ -103,19 +144,37 @@ export default function ProductCarFitment() {
     >
       <BlockStack gap="400">
         <Card>
-          <InlineStack gap="300" blockAlign="center">
+          <InlineStack gap="300" blockAlign="start">
             <Thumbnail
-              source="https://cdn.shopify.com/static/images/placeholders/product-1.png"
+              source={imageUrl || "https://cdn.shopify.com/static/images/placeholders/product-1.png"}
               alt={article.sku || article.numericId}
-              size="medium"
+              size="large"
             />
             <BlockStack gap="100">
-              <Text as="h2" variant="headingMd">
-                {article.vendor || "Catalogue article"} {article.sku}
+              <Text as="h2" variant="headingMd">{article.title || "Catalogue article"}</Text>
+              <Text as="p">SKU {article.sku || "—"} · Brand {loaded?.brand || taxonomy.brand || article.vendor || "—"} · MPN {loaded?.mpn || taxonomy.mpn || "—"}</Text>
+              <Text as="p">Shopify product {article.numericId || "—"} · variant {article.variantNumericId || "—"}</Text>
+              <Text as="p">Assembly {taxonomy.assembly || "—"} · Category {taxonomy.category || "—"} · Product group {taxonomy.productGroup || "—"}</Text>
+              <Text as="p">OE {joinNumbers(loaded?.oe_numbers) || "none"}</Text>
+              <Text as="p">Cross references {joinNumbers(loaded?.cross_references, true) || "none"}</Text>
+              <InlineStack gap="200">
+                <Badge>{`${loaded?.candidate_fitments?.length || 0} candidates`}</Badge>
+                <Badge tone="success">{`${loaded?.verified_fitments?.length || 0} verified`}</Badge>
+                <Badge tone="critical">{`${loaded?.rejected_fitments?.length || 0} rejected`}</Badge>
+                <Badge tone="warning">{`${loaded?.conflicts?.length || 0} conflicts`}</Badge>
+              </InlineStack>
+              <Text as="p">
+                Shopify sync cache: ocean.fitment_count {shopifyFitment.count || "—"} · ocean.fitment_status {shopifyFitment.status || "—"}
               </Text>
-              <Text as="p" variant="bodySm" tone="subdued">
-                Display title is not an identity key: {article.title || "—"}
+              <Text as="p" tone="subdued">
+                ocean.verified_vehicle_keys {shopifyFitment.verifiedKeys || "—"} · custom.fitment_keys {shopifyFitment.fitmentKeys || "—"}
               </Text>
+              <Text as="p" tone="subdued">Evidence stays on Fitment Review. OE numbers are not application proof.</Text>
+              {article.sku ? (
+                <Link to={reviewHref} style={{ textDecoration: "none" }}>
+                  <Button variant="primary">Open Fitment Review</Button>
+                </Link>
+              ) : null}
             </BlockStack>
           </InlineStack>
         </Card>
