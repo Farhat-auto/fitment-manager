@@ -961,8 +961,11 @@ export default function Products() {
               Export CSV
             </Button>
 
+            <RemixLink to={appHref("/app/product-linker", location.search || "")} style={{ textDecoration: "none" }}>
+              <Button variant="primary">Product Linker</Button>
+            </RemixLink>
             <RemixLink to={appHref("/app/import", location.search || "")} style={{ textDecoration: "none" }}>
-              <Button variant="primary">Import CSV</Button>
+              <Button>Import CSV</Button>
             </RemixLink>
           </InlineStack>
         </InlineStack>
@@ -1039,11 +1042,11 @@ export default function Products() {
               </Button>
             </InlineStack>
             <TextField
-              label="Search by title or handle"
+              label="Search by title, handle, or SKU"
               value={query}
               onChange={onChangeQuery}
               autoComplete="off"
-              placeholder="Search by title or handle..."
+              placeholder="Search by title, handle, or SKU..."
               connectedRight={
                 <Button onClick={submitQuery} disabled={!query.trim()}>
                   Search
@@ -1125,7 +1128,7 @@ export default function Products() {
                           {p.title || "(untitled)"}
                         </Text>
                         <Text as="p" variant="bodySm" tone="subdued">
-                          {p.handle}
+                          {p.handle}{p.sku ? ` · SKU ${p.sku}` : ""}
                         </Text>
                         {String(p?.vendor ?? "").trim() ? (
                           <Text as="p" variant="bodySm" tone="subdued">
@@ -1148,7 +1151,9 @@ export default function Products() {
                         >
                           <Button variant="primary">Open product</Button>
                         </RemixLink>
-                      ) : null}
+                      ) : (
+                        <Text as="p" tone="critical">Open product failed: Shopify product ID is missing.</Text>
+                      )}
                       {p.sku ? (
                         <RemixLink
                           to={appHref("/app/catalogue-fitment-review", `sku=${encodeURIComponent(p.sku)}${location.search ? `&${location.search.replace(/^\?/, "")}` : ""}`)}
@@ -1186,7 +1191,13 @@ export default function Products() {
                         >
                           <Button>View Product</Button>
                         </a>
-                      ) : null}
+                      ) : (
+                        <Text as="p" tone="critical">
+                          {productNumId
+                            ? "Shopify Admin URL failed: shop domain is missing."
+                            : "Shopify Admin URL failed: Shopify product ID is missing."}
+                        </Text>
+                      )}
                     </InlineStack>
                   </InlineStack>
                   </div>

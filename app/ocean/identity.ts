@@ -114,12 +114,14 @@ export function listingBelongsTo(
   identity: Partial<StableIdentity>,
 ) {
   const row = listing || {};
-  const wantedSku = text(identity.sku);
-  const gotSku = text(row.sku);
   const wantedId = numericId(identity.shopify_product_id);
   const gotId = numericId(row.shopify_product_id);
+  // A stored Shopify product id is the listing. SKU text can differ
+  // (HB-00319 vs HI-BRIT-HB-00319) without making the row belong to someone else.
+  if (wantedId && gotId) return wantedId === gotId;
+  const wantedSku = text(identity.sku);
+  const gotSku = text(row.sku);
   if (wantedSku && gotSku && wantedSku.toLowerCase() !== gotSku.toLowerCase()) return false;
-  if (wantedId && gotId && wantedId !== gotId) return false;
   return true;
 }
 

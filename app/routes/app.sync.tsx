@@ -13,11 +13,13 @@ function num(value: unknown) {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.admin(request);
+  const status = new URL(request.url).searchParams.get("status") || "";
   const [coverage, quality] = await Promise.all([
     oceanGet("/catalogue-coverage"),
     oceanGet("/catalogue-quality"),
   ]);
   return json({
+    status,
     error: coverage?.error || quality?.error || "",
     pending: num(coverage?.sync_pending),
     failed: num(coverage?.sync_failed),
@@ -27,14 +29,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, href }: { label: string; value: number; href: string }) {
   return (
-    <Card>
-      <BlockStack gap="100">
-        <Text as="p" variant="bodySm" tone="subdued">{label}</Text>
-        <Text as="p" variant="headingLg">{value}</Text>
-      </BlockStack>
-    </Card>
+    <Link to={href} style={{ textDecoration: "none", color: "inherit" }}>
+      <Card>
+        <BlockStack gap="100">
+          <Text as="p" variant="bodySm" tone="subdued">{label}</Text>
+          <Text as="p" variant="headingLg">{value}</Text>
+        </BlockStack>
+      </Card>
+    </Link>
   );
 }
 
@@ -44,6 +48,14 @@ export default function SyncStatus() {
   const review = (sku: string) => appHref("/app/catalogue-fitment-review", `sku=${encodeURIComponent(sku)}${location.search ? `&${location.search.replace(/^\?/, "")}` : ""}`);
   const failed = data.failedRows as Array<Record<string, unknown>>;
   const pending = data.pendingRows as Array<Record<string, unknown>>;
+  const params = new URLSearchParams(location.search.replace(/^\?/, ""));
+  const statusHref = (status: string) => {
+    const next = new URLSearchParams(params);
+    next.set("status", status);
+    return appHref("/app/sync", `?${next.toString()}`);
+  };
+  const showPending = !data.status || data.status === "pending";
+  const showFailed = !data.status || data.status === "failed";
   return (
     <Page title="Sync status">
       <BlockStack gap="400">
@@ -55,12 +67,18 @@ export default function SyncStatus() {
           </p>
         </Banner>
         {data.error ? <Banner tone="warning"><p>{data.error}</p></Banner> : null}
+        {data.status ? <Banner tone="info"><p>Showing {data.status} sync jobs.</p></Banner> : null}
         <InlineGrid columns={{ xs: 1, sm: 3 }} gap="300">
-          <Stat label="Pending" value={data.pending} />
-          <Stat label="Failed" value={data.failed} />
-          <Stat label="Synced" value={data.synced} />
+          <Stat label="Pending" value={data.pending} href={statusHref("pending")} />
+          <Stat label="Failed" value={data.failed} href={statusHref("failed")} />
+          <Stat label="Synced" value={data.synced} href={statusHref("synced")} />
         </InlineGrid>
-        <Card>
+        {data.status === "synced" ? (
+          <Banner tone="info" title="Synced jobs">
+            <p>Synced count is {data.synced}. This page lists pending and failed job rows. A job is not marked synced from here.</p>
+          </Banner>
+        ) : null}
+        {showPending ? <Card>
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Pending jobs</Text>
             {pending.length ? (
@@ -76,8 +94,8 @@ export default function SyncStatus() {
               </IndexTable>
             ) : <Text as="p">No pending sync jobs.</Text>}
           </BlockStack>
-        </Card>
-        <Card>
+        </Card> : null}
+        {showFailed ? <Card>
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">Failed jobs</Text>
             {failed.length ? (
@@ -94,7 +112,7 @@ export default function SyncStatus() {
             ) : <Text as="p">No failed sync jobs.</Text>}
             <Text as="p" tone="subdued">Retries stay on the existing Fitment Manager sync consumer. A failed Admin session is not rewritten from this page.</Text>
           </BlockStack>
-        </Card>
+        </Card> : null}
       </BlockStack>
     </Page>
   );

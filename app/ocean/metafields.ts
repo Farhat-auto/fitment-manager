@@ -3,6 +3,7 @@ export const PRODUCT_IDENTITY_QUERY = `#graphql
     product(id: $id) {
       id
       handle
+      status
       vendor
       title
       description
