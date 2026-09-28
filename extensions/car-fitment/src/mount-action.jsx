@@ -1,6 +1,6 @@
 import "@shopify/ui-extensions/preact";
 import { render } from "preact";
-import { FitmentGuard } from "./guard.jsx";
+import { VehicleSearch } from "./vehicle-search.jsx";
 
 function closeAction() {
   try {
@@ -10,43 +10,22 @@ function closeAction() {
   }
 }
 
-function unlockHost() {
-  const nodes = document.querySelectorAll("s-admin-action");
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index];
-    node.loading = false;
-    node.removeAttribute("loading");
-  }
+function SearchAction() {
+  return (
+    <s-admin-action heading="Search linked products" loading={false}>
+      <s-button slot="primary-action" onClick={closeAction}>
+        Close
+      </s-button>
+      <s-button slot="secondary-actions" onClick={closeAction}>
+        Cancel
+      </s-button>
+      <VehicleSearch />
+    </s-admin-action>
+  );
 }
 
-function paintShell(message) {
-  const host = document.createElement("s-admin-action");
-  host.heading = "CAR FITMENT";
-  host.loading = false;
-  const text = document.createElement("s-text");
-  text.textContent = message;
-  const primary = document.createElement("s-button");
-  primary.slot = "primary-action";
-  primary.textContent = "Close";
-  primary.addEventListener("click", closeAction);
-  const secondary = document.createElement("s-button");
-  secondary.slot = "secondary-actions";
-  secondary.textContent = "Cancel";
-  secondary.addEventListener("click", closeAction);
-  host.append(text, primary, secondary);
-  document.body.replaceChildren(host);
-  unlockHost();
-}
-
-export default function mountCarFitmentAction() {
-  // The products page keeps the first admin action and shows its spinner
-  // until this file replaces it with the real window.
-  try {
-    const stale = document.querySelectorAll("s-admin-action");
-    for (let index = 0; index < stale.length; index += 1) stale[index].remove();
-    render(<FitmentGuard mode="action" />, document.body);
-    unlockHost();
-  } catch (error) {
-    paintShell((error && error.message) || "CAR FITMENT could not open.");
-  }
+export default async function mountCarFitmentAction() {
+  // Render one admin action into the document. Do not remove the host node:
+  // deleting it leaves the products page on the spinner.
+  render(<SearchAction />, document.body);
 }

@@ -33,18 +33,27 @@ function catalogueUrls(path) {
 export async function catalogueGet(path) {
   const headers = await authHeaders();
   const urls = catalogueUrls(path);
+  let failure = {};
   for (let i = 0; i < urls.length; i += 1) {
     try {
       const res = await fetch(urls[i], { headers });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data && typeof data === "object" && !data.error) return data;
-      if (data && data.fitments) return data;
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (err) {
+        data = {};
+      }
+      if (!data || typeof data !== "object") data = {};
+      if (!res.ok) {
+        failure = Object.assign({ status: res.status }, data);
+        continue;
+      }
+      return data;
     } catch (err) {
-      // Try the next Fitment Manager origin.
+      failure = { error: "network" };
     }
   }
-  return {};
+  return failure;
 }
 
 export async function cataloguePost(path, body) {
