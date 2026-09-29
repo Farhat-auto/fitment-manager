@@ -1,5 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
-import { catalogueGet, cataloguePages } from "./api.js";
+import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
+import { PRODUCT_QUERY, productFromNode } from "./payload.js";
+import { selectedProductIds } from "./selection.js";
 
 const MODE_EXACT = "exact";
 const MODE_MODEL = "model";
@@ -43,6 +45,14 @@ function engineLabel(row) {
   const code = row && row.engine_code ? String(row.engine_code) : "";
   if (code) return code;
   return (row && (row.detail || row.name || row.title)) || "Engine";
+}
+
+function savedVehicleLabel(row) {
+  const direct = row && (row.checkbox_label || row.customer_label || row.title || row.detail);
+  if (direct) return String(direct);
+  return [row && row.make_name, row && row.model_name, row && row.generation_name, row && row.engine_code]
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function modeLabel(mode) {
@@ -127,6 +137,8 @@ export function VehicleSearch() {
   const [note, setNote] = useState("Loading makes…");
   const [products, setProducts] = useState([]);
   const [productNote, setProductNote] = useState("");
+  const [saved, setSaved] = useState([]);
+  const [savedNote, setSavedNote] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +161,49 @@ export function VehicleSearch() {
       })
       .catch(() => {
         if (!cancelled) setNote("Makes could not be loaded.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let productId = "";
+    try {
+      const data = typeof shopify === "undefined" ? {} : (shopify && shopify.data) || {};
+      productId = selectedProductIds(data)[0] || "";
+    } catch (err) {
+      productId = "";
+    }
+    if (!productId) return undefined;
+    let cancelled = false;
+    setSavedNote("Loading Fitment Manager…");
+    adminGraphql(PRODUCT_QUERY, { id: productId })
+      .then((payload) => {
+        const node = ((payload || {}).data || {}).product;
+        if (!node || cancelled) return null;
+        const product = productFromNode(node);
+        const query = [
+          ["shopify_product_id", product.numericId],
+          ["sku", product.sku],
+          ["handle", product.handle],
+          ["shopify_variant_id", product.variantNumericId],
+          ["brand", product.vendor],
+          ["mpn", product.mpn],
+        ]
+          .filter((pair) => pair[1])
+          .map((pair) => encodeURIComponent(pair[0]) + "=" + encodeURIComponent(pair[1]))
+          .join("&");
+        return catalogueGet("/product-fitment?" + query);
+      })
+      .then((listing) => {
+        if (cancelled || !listing) return;
+        const rows = Array.isArray(listing.fitments) ? listing.fitments : [];
+        setSaved(rows);
+        setSavedNote(listing.fitment_label || (rows.length ? "Fitment: " + rows.length + " vehicles" : "Fitment Manager has no vehicles on this product."));
+      })
+      .catch(() => {
+        if (!cancelled) setSavedNote("Fitment Manager could not be loaded for this product.");
       });
     return () => {
       cancelled = true;
@@ -283,8 +338,27 @@ export function VehicleSearch() {
   const contextLabel = contextBits.length ? contextBits.join(" - ") + " - " + modeLabel(mode) : "";
   const shown = products.slice(0, 50);
 
+  const savedShown = saved.slice(0, 30);
+
   return (
     <s-stack gap="base">
+      {savedNote ? (
+        <s-stack gap="small">
+          <s-text type="strong">Fitment Manager</s-text>
+          <s-text>{savedNote}</s-text>
+          {savedShown.map((row) => (
+            <s-text key={String(row.fitment_id || row.vehicle_id || row.vehicle_key || savedVehicleLabel(row))}>
+              {savedVehicleLabel(row) || "Vehicle"}
+              {row.verification_status ? " · " + row.verification_status : ""}
+            </s-text>
+          ))}
+          {saved.length > savedShown.length ? (
+            <s-text>
+              Showing {savedShown.length} of {saved.length} Fitment Manager vehicles
+            </s-text>
+          ) : null}
+        </s-stack>
+      ) : null}
       <s-stack direction="inline" gap="base">
         <s-text type="strong">VEHICLE</s-text>
         <s-select key={"make-" + makes.length} label="Make" value={makeId} onChange={(event) => onMake(fieldValue(event))}>

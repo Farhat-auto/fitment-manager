@@ -46,6 +46,40 @@ function engineLabel(row: Row) {
   return String((row && (row.detail || row.name || row.title)) || "Engine");
 }
 
+function savedVehicleLabel(row: Row) {
+  const direct = row && (row.checkbox_label || row.customer_label || row.title || row.detail);
+  if (direct) return String(direct);
+  return [row && row.make_name, row && row.model_name, row && row.generation_name, row && row.engine_code].filter(Boolean).join(" / ");
+}
+
+function readProductGid(api: any) {
+  const product = api?.data?.product;
+  const raw = product && product.id != null ? product.id : product;
+  if (!raw) return "";
+  if (typeof raw === "string") return raw;
+  if (typeof raw.peek === "function") {
+    try {
+      return readProductGid({ data: { product: "value" in raw ? raw.value : raw.peek() } });
+    } catch (err) {
+      return "";
+    }
+  }
+  if (raw.id) return String(raw.id);
+  return "";
+}
+
+const PRODUCT_IDENTITY_QUERY = `
+query FitmentManagerProduct($id: ID!) {
+  product(id: $id) {
+    id
+    handle
+    vendor
+    mpn: metafield(namespace: "custom", key: "mpn") { value }
+    variants(first: 1) { nodes { id sku } }
+  }
+}
+`;
+
 function modeLabel(mode: string) {
   if (mode === MODE_ENGINE) return "All for Engine";
   if (mode === MODE_MODEL) return "All for Model";
@@ -185,6 +219,8 @@ export function VehicleBar() {
   const [note, setNote] = useState("Loading makes…");
   const [products, setProducts] = useState<Row[]>([]);
   const [productNote, setProductNote] = useState("");
+  const [saved, setSaved] = useState<Row[]>([]);
+  const [savedNote, setSavedNote] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -202,6 +238,48 @@ export function VehicleBar() {
       })
       .catch(() => {
         if (!cancelled) setNote("Makes could not be loaded.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const gid = readProductGid(apiRef.current);
+    const numeric = gid.split("/").pop() || "";
+    if (!numeric) return undefined;
+    let cancelled = false;
+    setSavedNote("Loading Fitment Manager…");
+    const productGid = gid.startsWith("gid://") ? gid : "gid://shopify/Product/" + numeric;
+    fetch("shopify:admin/api/graphql.json", {
+      method: "POST",
+      body: JSON.stringify({ query: PRODUCT_IDENTITY_QUERY, variables: { id: productGid } }),
+    })
+      .then((res) => res.json())
+      .then(async (payload) => {
+        const node = payload?.data?.product || {};
+        const variant = node?.variants?.nodes?.[0] || {};
+        const params = new URLSearchParams();
+        params.set("shopify_product_id", String(node.id || productGid).split("/").pop() || numeric);
+        if (variant.sku) params.set("sku", String(variant.sku));
+        if (node.handle) params.set("handle", String(node.handle));
+        const variantId = String(variant.id || "").split("/").pop();
+        if (variantId) params.set("shopify_variant_id", variantId);
+        if (node.vendor) params.set("brand", String(node.vendor));
+        if (node.mpn?.value) params.set("mpn", String(node.mpn.value));
+        return catalogueGet(apiRef.current, "/product-fitment?" + params.toString());
+      })
+      .then((listing) => {
+        if (cancelled || !listing) return;
+        const rows = Array.isArray(listing.fitments) ? listing.fitments : [];
+        setSaved(rows);
+        setSavedNote(
+          listing.fitment_label ||
+            (rows.length ? "Fitment: " + rows.length + " vehicles" : "Fitment Manager has no vehicles on this product."),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSavedNote("Fitment Manager could not be loaded for this product.");
       });
     return () => {
       cancelled = true;
@@ -317,9 +395,26 @@ export function VehicleBar() {
   const contextBits = [makeName, modelName, generationId ? generationName : "", selectedEngine ? engineLabel(selectedEngine) : ""].filter(Boolean);
   const context = contextBits.length ? contextBits.join(" - ") + " - " + modeLabel(mode) : "";
   const shown = products.slice(0, 50);
+  const savedShown = saved.slice(0, 30);
 
   return (
     <BlockStack gap="base">
+      {savedNote ? (
+        <BlockStack gap="base">
+          <Text fontWeight="bold">Fitment Manager</Text>
+          <Text>{savedNote}</Text>
+          {savedShown.map((row) => (
+            <Text key={String(row.fitment_id || row.vehicle_id || row.vehicle_key || savedVehicleLabel(row))}>
+              {(savedVehicleLabel(row) || "Vehicle") + (row.verification_status ? " · " + row.verification_status : "")}
+            </Text>
+          ))}
+          {saved.length > savedShown.length ? (
+            <Text>
+              Showing {savedShown.length} of {saved.length} Fitment Manager vehicles
+            </Text>
+          ) : null}
+        </BlockStack>
+      ) : null}
       <InlineStack gap="base" blockAlign="center">
         <Text fontWeight="bold">VEHICLE</Text>
         <Select

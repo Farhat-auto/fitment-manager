@@ -211,6 +211,8 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Model/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Engine/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/products\?vehicle_key=/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/product-fitment\?/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/product-fitment\?/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Make"/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Engine"/);
   assert.doesNotMatch(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
