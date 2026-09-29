@@ -9,6 +9,7 @@ import {
   linkItemToVehicles,
   loadCompatible,
   makesFrom,
+  mergeVehicles,
   parseReferenceList,
   pickCandidate,
   selectedVehicleIds,
@@ -250,11 +251,13 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /oe_references/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Compatible vehicles/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Save link/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Add selected/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Add all for this model/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/makes\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/models\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/engines\?has_vehicles=0/);
-  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Save link/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Add selected/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Add all for this model/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /linkItemToVehicles/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/product-fitment/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/article-create/);
@@ -440,6 +443,11 @@ checkAsync("product card links this item to its vehicles", async () => {
   assert.equal(linked.ok, true);
   assert.equal(linked.added, 1);
   assert.equal(linked.rows.length, 1);
+  assert.equal(
+    mergeVehicles([{ vehicle_key: "ovh-a", engine_code: "276DT" }], [{ vehicle_key: "ovh-c", engine_code: "306DT" }])
+      .length,
+    2,
+  );
 });
 
 await Promise.all(pending);

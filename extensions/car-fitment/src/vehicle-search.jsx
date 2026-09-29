@@ -5,6 +5,7 @@ import {
   fetchAppCatalogue,
   linkItemToVehicles,
   loadCompatible,
+  mergeVehicles,
   parseReferenceList,
   postAppCatalogue,
   selectedVehicleIds,
@@ -141,6 +142,7 @@ export function VehicleSearch() {
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
   const [engineId, setEngineId] = useState("");
+  const [checked, setChecked] = useState([]);
   const [mode, setMode] = useState(MODE_EXACT);
   const [note, setNote] = useState("Loading makes…");
   const [products, setProducts] = useState([]);
@@ -248,6 +250,7 @@ export function VehicleSearch() {
     setModelId("");
     setGenerationId("");
     setEngineId("");
+    setChecked([]);
     setModels([]);
     setGenerations([]);
     setEngines([]);
@@ -266,6 +269,7 @@ export function VehicleSearch() {
     setModelId(value);
     setGenerationId("");
     setEngineId("");
+    setChecked([]);
     setGenerations([]);
     setEngines([]);
     setProducts([]);
@@ -307,7 +311,14 @@ export function VehicleSearch() {
 
   async function onLink(chosen) {
     const current = itemRef.current;
-    const ids = Array.isArray(chosen) ? chosen : selectedVehicleIds(engines, engineId, mode);
+    const picked = checked.length ? checked : engineId ? [engineId] : [];
+    const ids = Array.isArray(chosen)
+      ? chosen
+      : mode === MODE_MODEL
+        ? selectedVehicleIds(engines, "", MODE_MODEL)
+        : mode === MODE_ENGINE
+          ? Array.from(new Set(picked.flatMap((id) => selectedVehicleIds(engines, id, MODE_ENGINE))))
+          : picked;
     if (!current || !ids.length) {
       setLinkNote("Select a vehicle to link this item.");
       return;
@@ -327,35 +338,43 @@ export function VehicleSearch() {
       setLinkNote(result.errorText);
       return;
     }
-    if (result.rows.length) setSaved(result.rows);
-    setSavedNote(result.rows.length ? "Compatible vehicles · " + result.rows.length : "");
+    const merged = mergeVehicles(saved, result.rows);
+    setSaved(merged);
+    setChecked([]);
+    setEngineId("");
+    setSavedNote(merged.length ? "Compatible vehicles · " + merged.length : "");
     setLinkNote(
-      result.added
-        ? "Saved " +
-            result.added +
-            (result.added === 1 ? " vehicle" : " vehicles") +
-            " on this item. Linked in Fitment Manager and on the storefront."
-        : "Saved. This vehicle is already linked in Fitment Manager and on the storefront.",
+      (result.added
+        ? "Added " + result.added + (result.added === 1 ? " vehicle" : " vehicles") + ". "
+        : "Those vehicles are already on this item. ") +
+        "This product now has " +
+        merged.length +
+        (merged.length === 1 ? " vehicle. " : " vehicles. ") +
+        "Choose another model or engine to add more.",
     );
   }
 
   function onEngine(value) {
     setEngineId(value);
-    if (!linked || !value) return;
-    const ids = selectedVehicleIds(engines, value, mode);
-    if (!ids.length) return;
-    onLink(ids);
+    if (!value) return;
+    setChecked((current) => (current.indexOf(value) >= 0 ? current : current.concat([value])));
+    setLinkNote("Engine added to this selection. Choose another engine or model, then Add selected. Saved vehicles stay on this product.");
   }
 
   function onMode(next) {
     setMode(next);
-    if (!linked) return;
-    const ids = selectedVehicleIds(engines, engineId, next);
+    if (!linked || next === MODE_EXACT) return;
+    const picked = checked.length ? checked : engineId ? [engineId] : [];
+    const ids =
+      next === MODE_MODEL
+        ? selectedVehicleIds(engines, "", MODE_MODEL)
+        : Array.from(new Set(picked.flatMap((id) => selectedVehicleIds(engines, id, MODE_ENGINE))));
     if (ids.length) onLink(ids);
   }
 
   function onClear() {
     setEngineId("");
+    setChecked([]);
     setMode(MODE_EXACT);
     setProducts([]);
     setProductNote("");
@@ -427,7 +446,8 @@ export function VehicleSearch() {
   const shown = products.slice(0, 50);
   const visible = linked ? saved : [];
   const visibleShown = visible.slice(0, 40);
-  const canLink = linked && selectedVehicleIds(engines, engineId, mode).length > 0 && !busy;
+  const pendingIds = checked.length ? checked : engineId ? [engineId] : [];
+  const canLink = linked && (mode === MODE_MODEL ? engines.length > 0 : pendingIds.length > 0) && !busy;
   const details = itemLine(item);
 
   return (
@@ -437,10 +457,20 @@ export function VehicleSearch() {
           <s-text type="strong">{(item && item.title) || "This item"}</s-text>
           {details ? <s-text>{details}</s-text> : null}
           {item && item.oe && item.oe.length ? <s-text>{"OE " + item.oe.join(", ")}</s-text> : null}
-          <s-text>{linkNote || "Select an engine to save it on this item."}</s-text>
+          <s-text>
+            {linkNote ||
+              "Add more than one model and engine. Vehicles already saved stay on this product."}
+          </s-text>
           <s-button variant="primary" disabled={!canLink} onClick={() => onLink()}>
-            {busy ? "Saving…" : "Save link"}
+            {busy ? "Adding…" : "Add selected"}
           </s-button>
+          <s-button variant="secondary" disabled={!engines.length || busy} onClick={() => onMode(MODE_MODEL)}>
+            Add all for this model
+          </s-button>
+          {checked.map((id) => {
+            const row = engines.find((item) => engineKey(item) === id);
+            return <s-text key={id}>{"Also add · " + (row ? engineLabel(row) : id)}</s-text>;
+          })}
           {matchNote ? <s-text>{matchNote}</s-text> : null}
         </s-stack>
       ) : null}

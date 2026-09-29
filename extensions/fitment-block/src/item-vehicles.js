@@ -281,6 +281,24 @@ export function catalogueEngineLabel(row) {
   return "Engine";
 }
 
+export function mergeVehicles(current, incoming) {
+  const rows = [];
+  const seen = {};
+  []
+    .concat(incoming || [])
+    .concat(current || [])
+    .forEach((row) => {
+      if (!row) return;
+      const key = String(
+        row.vehicle_key || row.vehicle_id || row.fitment_id || row.id || row.checkbox_label || "",
+      );
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      rows.push(row);
+    });
+  return rows;
+}
+
 export function selectedVehicleIds(engines, engineId, mode) {
   const rows = Array.isArray(engines) ? engines : [];
   const keyOf = (row) => String((row && (row.vehicle_key || row.vehicle_id || row.id)) || "");
