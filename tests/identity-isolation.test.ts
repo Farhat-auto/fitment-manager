@@ -206,9 +206,13 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.doesNotMatch(action, /Loading car fitment/);
   assert.match(action, /render\(<SearchAction \/>, document\.body\)/);
   assert.doesNotMatch(action, /stale\[index\]\.remove\(\)/);
-  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Search products linked to a vehicle/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /VEHICLE/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Exact Fitment/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Model/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Engine/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/products\?vehicle_key=/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Make"/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Engine"/);
   assert.doesNotMatch(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
   assert.doesNotMatch(source("extensions/car-fitment/src/guard.jsx"), /Download import template/);
   assert.match(block, /@shopify\/ui-extensions\/preact/);
