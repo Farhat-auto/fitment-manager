@@ -1,5 +1,13 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
+import {
+  applyVehicleScope,
+  enginesFrom,
+  filterVehicles,
+  loadCompatible,
+  modelsFrom,
+  parseReferenceList,
+} from "./item-vehicles.js";
 import { PRODUCT_QUERY, productFromNode } from "./payload.js";
 import { selectedProductIds } from "./selection.js";
 
@@ -76,6 +84,25 @@ function vehicleKeys(mode, engines, engineId) {
   return rows.map(engineKey).filter(Boolean);
 }
 
+function currentProductId() {
+  try {
+    let data = typeof shopify === "undefined" ? {} : (shopify && shopify.data) || {};
+    if (data && typeof data.peek === "function") {
+      data = "value" in data ? data.value : data.peek();
+    }
+    return selectedProductIds(data)[0] || "";
+  } catch (err) {
+    return "";
+  }
+}
+
+function itemLine(item) {
+  if (!item) return "";
+  return [item.vendor, item.sku ? "SKU " + item.sku : "", item.mpn ? "MPN " + item.mpn : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function adminProductHref(id) {
   const numeric = String(id || "").split("/").pop();
   if (!numeric) return "";
@@ -139,74 +166,114 @@ export function VehicleSearch() {
   const [productNote, setProductNote] = useState("");
   const [saved, setSaved] = useState([]);
   const [savedNote, setSavedNote] = useState("");
+  const [linked, setLinked] = useState(false);
+  const [item, setItem] = useState(null);
+  const [matchNote, setMatchNote] = useState("");
+  const productOwned = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    cataloguePages("/makes?has_vehicles=0", "makes")
-      .then(async (rows) => {
-        if (cancelled) return;
-        if (rows.length) {
-          setMakes(rows);
-          setNote("");
-          return;
-        }
-        const payload = await catalogueGet("/makes?has_vehicles=0&limit=5&offset=0");
-        if (cancelled) return;
-        const status = payload && payload.status;
-        setNote(
-          status
-            ? "Makes could not be loaded (HTTP " + status + ")."
-            : "No makes were returned by the vehicle catalogue.",
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setNote("Makes could not be loaded.");
-      });
+    let timer;
+    let tries = 0;
+    const loadCatalogue = () => {
+      cataloguePages("/makes?has_vehicles=0", "makes")
+        .then(async (rows) => {
+          if (cancelled || productOwned.current) return;
+          if (rows.length) {
+            setMakes(rows);
+            setNote("");
+            return;
+          }
+          const payload = await catalogueGet("/makes?has_vehicles=0&limit=5&offset=0");
+          if (cancelled || productOwned.current) return;
+          const status = payload && payload.status;
+          setNote(
+            status
+              ? "Makes could not be loaded (HTTP " + status + ")."
+              : "No makes were returned by the vehicle catalogue.",
+          );
+        })
+        .catch(() => {
+          if (!cancelled && !productOwned.current) setNote("Makes could not be loaded.");
+        });
+    };
+    const waitForProduct = () => {
+      if (cancelled || productOwned.current || currentProductId()) return;
+      tries += 1;
+      if (tries < 8) {
+        timer = setTimeout(waitForProduct, 300);
+        return;
+      }
+      loadCatalogue();
+    };
+    waitForProduct();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 
   useEffect(() => {
-    let productId = "";
-    try {
-      const data = typeof shopify === "undefined" ? {} : (shopify && shopify.data) || {};
-      productId = selectedProductIds(data)[0] || "";
-    } catch (err) {
-      productId = "";
-    }
-    if (!productId) return undefined;
     let cancelled = false;
-    setSavedNote("Loading Fitment Manager…");
-    adminGraphql(PRODUCT_QUERY, { id: productId })
-      .then((payload) => {
-        const node = ((payload || {}).data || {}).product;
-        if (!node || cancelled) return null;
-        const product = productFromNode(node);
-        const query = [
-          ["shopify_product_id", product.numericId],
-          ["sku", product.sku],
-          ["handle", product.handle],
-          ["shopify_variant_id", product.variantNumericId],
-          ["brand", product.vendor],
-          ["mpn", product.mpn],
-        ]
-          .filter((pair) => pair[1])
-          .map((pair) => encodeURIComponent(pair[0]) + "=" + encodeURIComponent(pair[1]))
-          .join("&");
-        return catalogueGet("/product-fitment?" + query);
-      })
-      .then((listing) => {
-        if (cancelled || !listing) return;
-        const rows = Array.isArray(listing.fitments) ? listing.fitments : [];
-        setSaved(rows);
-        setSavedNote(listing.fitment_label || (rows.length ? "Fitment: " + rows.length + " vehicles" : "Fitment Manager has no vehicles on this product."));
-      })
-      .catch(() => {
-        if (!cancelled) setSavedNote("Fitment Manager could not be loaded for this product.");
-      });
+    let timer;
+    let tries = 0;
+    const run = (productId) => {
+      productOwned.current = true;
+      setLinked(true);
+      setNote("Loading compatible vehicles…");
+      adminGraphql(PRODUCT_QUERY, { id: productId })
+        .then(async (payload) => {
+          const node = ((payload || {}).data || {}).product || {};
+          const product = productFromNode(node);
+          const nextItem = {
+            title: product.title,
+            vendor: product.vendor,
+            sku: product.sku,
+            mpn: product.mpn,
+            oe: parseReferenceList(product.oeRefs),
+            handle: product.handle,
+          };
+          const result = await loadCompatible(
+            (path) => catalogueGet(path),
+            nextItem,
+            product.numericId || String(productId).split("/").pop(),
+            product.variantNumericId,
+          );
+          return { nextItem: nextItem, result: result };
+        })
+        .then((loaded) => {
+          if (cancelled || !loaded) return;
+          const rows = loaded.result.rows || [];
+          const scope = applyVehicleScope(rows);
+          setItem(loaded.nextItem);
+          setSaved(rows);
+          setMatchNote(loaded.result.matchNote || "");
+          setMakes(scope.makes);
+          setModels(scope.models);
+          setEngines(scope.engines);
+          setMakeId(scope.makeId);
+          setModelId(scope.modelId);
+          setEngineId("");
+          setSavedNote(rows.length ? "Compatible vehicles · " + rows.length : "");
+          setNote(rows.length ? "" : loaded.result.errorText || "No compatible vehicles are linked to this item.");
+        })
+        .catch(() => {
+          if (!cancelled) setNote("Compatible vehicles could not be loaded.");
+        });
+    };
+    const look = () => {
+      const productId = currentProductId();
+      if (productId) {
+        run(productId);
+        return;
+      }
+      tries += 1;
+      if (tries < 8) timer = setTimeout(look, 300);
+    };
+    look();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 
@@ -221,6 +288,17 @@ export function VehicleSearch() {
     setProducts([]);
     setProductNote("");
     if (!value) return;
+    if (linked) {
+      const nextModels = modelsFrom(saved, value);
+      setModels(nextModels);
+      if (nextModels.length === 1) {
+        const nextModel = String(nextModels[0].id);
+        setModelId(nextModel);
+        setEngines(enginesFrom(saved, value, nextModel));
+      }
+      setNote("");
+      return;
+    }
     const rows = await cataloguePages(
       "/models?has_vehicles=0&make_id=" + encodeURIComponent(value),
       "models",
@@ -237,6 +315,10 @@ export function VehicleSearch() {
     setEngines([]);
     setProducts([]);
     setProductNote("");
+    if (linked) {
+      setEngines(value ? enginesFrom(saved, makeId, value) : []);
+      return;
+    }
     if (!value || !makeId) return;
     const query =
       "make_id=" + encodeURIComponent(makeId) + "&model_id=" + encodeURIComponent(value) + "&has_vehicles=0";
@@ -273,22 +355,37 @@ export function VehicleSearch() {
   }
 
   function onClear() {
+    setEngineId("");
+    setMode(MODE_EXACT);
+    setProducts([]);
+    setProductNote("");
+    if (linked) {
+      const scope = applyVehicleScope(saved);
+      setMakeId(scope.makeId);
+      setModelId(scope.modelId);
+      setModels(scope.models);
+      setEngines(scope.engines);
+      setGenerations([]);
+      setNote(saved.length ? "" : note);
+      return;
+    }
     setMakeId("");
     setModelId("");
     setGenerationId("");
-    setEngineId("");
-    setMode(MODE_EXACT);
     setModels([]);
     setGenerations([]);
     setEngines([]);
-    setProducts([]);
-    setProductNote("");
     setNote("");
   }
 
   const engineSignature = engines.map(engineKey).join(",");
 
   useEffect(() => {
+    if (linked) {
+      setProducts([]);
+      setProductNote("");
+      return;
+    }
     const keys = vehicleKeys(mode, engines, engineId);
     if (!keys.length) {
       setProducts([]);
@@ -328,7 +425,7 @@ export function VehicleSearch() {
     return () => {
       cancelled = true;
     };
-  }, [mode, engineId, modelId, engineSignature]);
+  }, [linked, mode, engineId, modelId, engineSignature]);
 
   const makeName = optionName(makes.find((row) => String(row.id) === makeId));
   const modelName = optionName(models.find((row) => String(row.id) === modelId));
@@ -337,28 +434,22 @@ export function VehicleSearch() {
   const contextBits = [makeName, modelName, generationName, selectedEngine ? engineLabel(selectedEngine) : ""].filter(Boolean);
   const contextLabel = contextBits.length ? contextBits.join(" - ") + " - " + modeLabel(mode) : "";
   const shown = products.slice(0, 50);
-
-  const savedShown = saved.slice(0, 30);
+  const visible = linked ? filterVehicles(saved, makeId, modelId, engineId, mode, engineKey, engineCode) : [];
+  const visibleShown = visible.slice(0, 40);
+  const details = itemLine(item);
 
   return (
     <s-stack gap="base">
-      {savedNote ? (
+      {linked ? (
         <s-stack gap="small">
-          <s-text type="strong">Fitment Manager</s-text>
-          <s-text>{savedNote}</s-text>
-          {savedShown.map((row) => (
-            <s-text key={String(row.fitment_id || row.vehicle_id || row.vehicle_key || savedVehicleLabel(row))}>
-              {savedVehicleLabel(row) || "Vehicle"}
-              {row.verification_status ? " · " + row.verification_status : ""}
-            </s-text>
-          ))}
-          {saved.length > savedShown.length ? (
-            <s-text>
-              Showing {savedShown.length} of {saved.length} Fitment Manager vehicles
-            </s-text>
-          ) : null}
+          <s-text type="strong">{(item && item.title) || "This item"}</s-text>
+          {details ? <s-text>{details}</s-text> : null}
+          {item && item.oe && item.oe.length ? <s-text>{"OE " + item.oe.join(", ")}</s-text> : null}
+          <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text>
+          {matchNote ? <s-text>{matchNote}</s-text> : null}
         </s-stack>
       ) : null}
+      {!linked || makes.length ? (
       <s-stack direction="inline" gap="base">
         <s-text type="strong">VEHICLE</s-text>
         <s-select key={"make-" + makes.length} label="Make" value={makeId} onChange={(event) => onMake(fieldValue(event))}>
@@ -417,6 +508,8 @@ export function VehicleSearch() {
           Clear
         </s-button>
       </s-stack>
+      ) : null}
+      {!linked || makes.length ? (
       <s-stack direction="inline" gap="base">
         <s-button variant={mode === MODE_EXACT ? "primary" : "secondary"} onClick={() => setMode(MODE_EXACT)}>
           Exact Fitment
@@ -428,9 +521,20 @@ export function VehicleSearch() {
           All for Engine
         </s-button>
       </s-stack>
+      ) : null}
       {note ? <s-banner tone="warning">{note}</s-banner> : null}
       {contextLabel ? <s-banner tone="success">{contextLabel}</s-banner> : null}
       {productNote ? <s-banner tone="info">{productNote}</s-banner> : null}
+      {visibleShown.map((row) => (
+        <s-text key={String(row.fitment_id || row.vehicle_id || row.vehicle_key || savedVehicleLabel(row))}>
+          {(savedVehicleLabel(row) || "Vehicle") + (row.verification_status ? " · " + row.verification_status : "")}
+        </s-text>
+      ))}
+      {visible.length > visibleShown.length ? (
+        <s-text>
+          Showing {visibleShown.length} of {visible.length} compatible vehicles
+        </s-text>
+      ) : null}
       {products.length > shown.length ? (
         <s-text>
           Showing {shown.length} of {products.length} linked products

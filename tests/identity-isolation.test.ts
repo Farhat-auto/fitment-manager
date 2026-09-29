@@ -4,6 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectedProductIds } from "../extensions/car-fitment/src/selection.js";
 import {
+  filterVehicles,
+  loadCompatible,
+  makesFrom,
+  parseReferenceList,
+  pickCandidate,
+  vehicleModel,
+} from "../extensions/car-fitment/src/item-vehicles.js";
+import {
   UNVERIFIED,
   NEEDS_REVIEW,
   VERIFIED,
@@ -64,6 +72,19 @@ function check(name: string, fn: () => void) {
     failed += 1;
     console.error("FAIL", name, error);
   }
+}
+
+const pending: Promise<void>[] = [];
+function checkAsync(name: string, fn: () => Promise<void>) {
+  pending.push(
+    fn().then(
+      () => console.log("PASS", name),
+      (error) => {
+        failed += 1;
+        console.error("FAIL", name, error);
+      },
+    ),
+  );
 }
 
 check("title is not an identity key", () => {
@@ -211,8 +232,21 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Model/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /All for Engine/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/products\?vehicle_key=/);
-  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/product-fitment\?/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/product-fitment\?/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /loadCompatible/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /oeRefs/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/product-fitment\?/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /oe_references/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /article-candidates/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /make_name/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /loadCompatible/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /oe_references/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Compatible vehicles/);
+  assert.doesNotMatch(source("extensions/fitment-block/src/VehicleBar.tsx"), /No makes were returned by the vehicle catalogue/);
+  assert.equal(
+    source("extensions/fitment-block/src/item-vehicles.js"),
+    source("extensions/car-fitment/src/item-vehicles.js"),
+  );
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Make"/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /label="Engine"/);
   assert.doesNotMatch(source("extensions/car-fitment/src/FitmentApp.jsx"), /Download import template/);
@@ -282,6 +316,77 @@ check("legacy writes are disabled", () => {
   assert.doesNotMatch(productPage, /from\("fitments"\)/);
   assert.match(productPage, /oceanProductFitmentGet/);
 });
+
+checkAsync("product card links this item to its vehicles", async () => {
+  assert.deepEqual(parseReferenceList('["LR124259","LR061969"]'), ["LR124259", "LR061969"]);
+  assert.deepEqual(parseReferenceList("LR124259, LR061969"), ["LR124259", "LR061969"]);
+  const rows = [
+    {
+      make_name: "LAND ROVER",
+      model_name: "Range Rover Sport",
+      generation_name: "(L320)",
+      year_range: "2005 - 2013",
+      engine_code: "276DT",
+      vehicle_key: "v1",
+    },
+    {
+      make_name: "LAND ROVER",
+      model_name: "Discovery",
+      generation_name: "3",
+      engine_code: "276DT",
+      vehicle_key: "v2",
+    },
+  ];
+  assert.deepEqual(
+    makesFrom(rows).map((row) => row.name),
+    ["LAND ROVER"],
+  );
+  assert.match(vehicleModel(rows[0]), /Range Rover Sport/);
+  assert.match(vehicleModel(rows[0]), /\(L320\)/);
+  const key = (row: { vehicle_key?: string }) => String(row.vehicle_key || "");
+  const code = (row: { engine_code?: string }) => String(row.engine_code || "");
+  assert.equal(filterVehicles(rows, "LAND ROVER", "", "v1", "exact", key, code).length, 1);
+  assert.equal(filterVehicles(rows, "LAND ROVER", "", "v1", "engine", key, code).length, 2);
+  assert.equal(
+    pickCandidate(
+      [
+        { sku: "OTHER", brand: "BOSCH", fitment_count: 3, discovery_only: true },
+        { sku: "AHE-1", brand: "AHE", fitment_count: 2, discovery_only: true },
+      ],
+      { vendor: "AHE" },
+    ).sku,
+    "AHE-1",
+  );
+  const result = await loadCompatible(
+    async (path: string) => {
+      if (path.startsWith("/product-fitment?shopify_product_id=")) return { fitments: [] };
+      if (path.startsWith("/article-candidates?")) {
+        assert.match(path, /oe_references=LR124259/);
+        return {
+          candidates: [{ sku: "AHE-842", brand: "AHE", mpn: "842.019M1", fitment_count: 1, discovery_only: true }],
+        };
+      }
+      if (path.startsWith("/product-fitment?sku=")) return { fitments: rows };
+      return { status: 500 };
+    },
+    { sku: "", vendor: "AHE", mpn: "", oe: ["LR124259"], handle: "" },
+    "111900662365527",
+    "",
+  );
+  assert.equal(result.rows.length, 2);
+  assert.match(result.matchNote, /AHE 842\.019M1/);
+  assert.match(result.matchNote, /OE reference/);
+  const direct = await loadCompatible(
+    async () => ({ fitments: rows }),
+    { sku: "842.019M1", vendor: "AHE", mpn: "842.019M1", oe: ["LR124259"], handle: "cooler" },
+    "111900662365527",
+    "",
+  );
+  assert.equal(direct.rows.length, 2);
+  assert.equal(direct.matchNote, "");
+});
+
+await Promise.all(pending);
 
 if (failed) {
   console.error(`\n${failed} checks failed`);
