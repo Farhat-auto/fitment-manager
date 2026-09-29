@@ -281,6 +281,28 @@ export function catalogueEngineLabel(row) {
   return "Engine";
 }
 
+/** Drop the shared make and model prefix so each engine choice shows only what differs. */
+export function engineChoiceLabel(row, siblings) {
+  const full = catalogueEngineLabel(row);
+  const labels = (Array.isArray(siblings) ? siblings : []).map((item) => catalogueEngineLabel(item)).filter(Boolean);
+  if (labels.length < 2) return full;
+  let prefix = labels[0];
+  for (let i = 1; i < labels.length && prefix; i += 1) {
+    let size = 0;
+    const other = labels[i];
+    const limit = Math.min(prefix.length, other.length);
+    while (size < limit && prefix.charAt(size) === other.charAt(size)) size += 1;
+    prefix = prefix.slice(0, size);
+  }
+  const cut = prefix.lastIndexOf(" ");
+  if (cut > 0) prefix = prefix.slice(0, cut + 1);
+  if (prefix && full.indexOf(prefix) === 0) {
+    const rest = full.slice(prefix.length).trim();
+    if (rest) return rest;
+  }
+  return full;
+}
+
 export function mergeVehicles(current, incoming) {
   const rows = [];
   const seen = {};

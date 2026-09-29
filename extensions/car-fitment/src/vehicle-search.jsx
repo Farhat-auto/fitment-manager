@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
 import {
   catalogueEngineLabel,
+  engineChoiceLabel,
   fetchAppCatalogue,
   linkItemToVehicles,
   loadCompatible,
@@ -356,9 +357,6 @@ export function VehicleSearch() {
 
   function onEngine(value) {
     setEngineId(value);
-    if (!value) return;
-    setChecked((current) => (current.indexOf(value) >= 0 ? current : current.concat([value])));
-    setLinkNote("Engine added to this selection. Choose another engine or model, then Add selected. Saved vehicles stay on this product.");
   }
 
   function onMode(next) {
@@ -457,20 +455,7 @@ export function VehicleSearch() {
           <s-text type="strong">{(item && item.title) || "This item"}</s-text>
           {details ? <s-text>{details}</s-text> : null}
           {item && item.oe && item.oe.length ? <s-text>{"OE " + item.oe.join(", ")}</s-text> : null}
-          <s-text>
-            {linkNote ||
-              "Add more than one model and engine. Vehicles already saved stay on this product."}
-          </s-text>
-          <s-button variant="primary" disabled={!canLink} onClick={() => onLink()}>
-            {busy ? "Adding…" : "Add selected"}
-          </s-button>
-          <s-button variant="secondary" disabled={!engines.length || busy} onClick={() => onMode(MODE_MODEL)}>
-            Add all for this model
-          </s-button>
-          {checked.map((id) => {
-            const row = engines.find((item) => engineKey(item) === id);
-            return <s-text key={id}>{"Also add · " + (row ? engineLabel(row) : id)}</s-text>;
-          })}
+          <s-text>{linkNote || "Choose the model and engine, then Add. Saved vehicles stay on this product."}</s-text>
           {matchNote ? <s-text>{matchNote}</s-text> : null}
         </s-stack>
       ) : null}
@@ -524,14 +509,20 @@ export function VehicleSearch() {
           <s-option value="">Engine</s-option>
           {engines.map((row) => (
             <s-option key={engineKey(row)} value={engineKey(row)}>
-              {engineLabel(row)}
+              {linked ? engineChoiceLabel(row, engines) : engineLabel(row)}
             </s-option>
           ))}
         </s-select>
+        {linked ? (
+          <s-button variant="primary" disabled={!engineId || busy} onClick={() => onLink([engineId])}>
+            {busy ? "Adding…" : "Add"}
+          </s-button>
+        ) : null}
         <s-button variant="tertiary" onClick={onClear}>
           Clear
         </s-button>
       </s-stack>
+      {!linked ? (
       <s-stack direction="inline" gap="base">
         <s-button variant={mode === MODE_EXACT ? "primary" : "secondary"} onClick={() => onMode(MODE_EXACT)}>
           Exact Fitment
@@ -543,6 +534,7 @@ export function VehicleSearch() {
           All for Engine
         </s-button>
       </s-stack>
+      ) : null}
       {note ? <s-banner tone="warning">{note}</s-banner> : null}
       {linkNote ? <s-banner tone={linkNote.indexOf("Saved") === 0 ? "success" : "warning"}>{linkNote}</s-banner> : null}
       {linked ? <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text> : null}

@@ -2,15 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   BlockStack,
   Button,
-  Checkbox,
   InlineStack,
   Select,
   Text,
 } from "@shopify/ui-extensions-react/admin";
 import { useApi } from "@shopify/ui-extensions-react/admin";
 import {
-  catalogueEngineLabel,
   catalogueFailure,
+  engineChoiceLabel,
   fetchAppCatalogue,
   linkItemToVehicles,
   loadCatalogueRows,
@@ -18,13 +17,8 @@ import {
   mergeVehicles,
   parseReferenceList,
   postAppCatalogue,
-  selectedVehicleIds,
   vehiclesFromLabels,
 } from "./item-vehicles.js";
-
-const MODE_EXACT = "exact";
-const MODE_MODEL = "model";
-const MODE_ENGINE = "engine";
 
 type Row = Record<string, any>;
 
@@ -152,8 +146,6 @@ export function VehicleBar() {
   const [makeId, setMakeId] = useState("");
   const [modelId, setModelId] = useState("");
   const [engineId, setEngineId] = useState("");
-  const [checked, setChecked] = useState<string[]>([]);
-  const [mode, setMode] = useState(MODE_EXACT);
   const [note, setNote] = useState("Loading manufacturers…");
   const [matchNote, setMatchNote] = useState("");
   const [linkNote, setLinkNote] = useState("");
@@ -255,7 +247,6 @@ export function VehicleBar() {
     setMakeId(value);
     setModelId("");
     setEngineId("");
-    setChecked([]);
     setModels([]);
     setEngines([]);
     setLinkNote("");
@@ -277,9 +268,8 @@ export function VehicleBar() {
     requestRef.current = request;
     setModelId(value);
     setEngineId("");
-    setChecked([]);
     setEngines([]);
-    setLinkNote("Choose engines for this model, then add them. Vehicles already saved stay on this product.");
+    setLinkNote("");
     if (!value || !makeId) return;
     const loaded = await loadCatalogueRows(
       (path: string) => fetchAppCatalogue(path),
@@ -301,30 +291,9 @@ export function VehicleBar() {
     setMakeId("");
     setModelId("");
     setEngineId("");
-    setChecked([]);
     setModels([]);
     setEngines([]);
-    setMode(MODE_EXACT);
-    setLinkNote("Saved vehicles stay on this product. Choose another model or engine to add more.");
-  }
-
-  function toggleEngine(id: string, on: boolean) {
-    setChecked((current) => {
-      const next = current.filter((key) => key !== id);
-      if (on) next.push(id);
-      return next;
-    });
-    setEngineId(on ? id : "");
-  }
-
-  function idsForAdd(nextMode: string) {
-    if (nextMode === MODE_MODEL) return selectedVehicleIds(engines, "", MODE_MODEL);
-    const picked = checked.length ? checked : engineId ? [engineId] : [];
-    if (nextMode === MODE_ENGINE && picked.length) {
-      const expanded = picked.flatMap((id) => selectedVehicleIds(engines, id, MODE_ENGINE));
-      return Array.from(new Set(expanded));
-    }
-    return picked;
+    setLinkNote("");
   }
 
   async function saveVehicles(ids: string[]) {
@@ -347,38 +316,27 @@ export function VehicleBar() {
     if (result.ok) {
       const merged = mergeVehicles(saved, result.rows);
       setSaved(merged);
-      setChecked([]);
       setEngineId("");
       const total = merged.length;
       setLinkNote(
-        (result.added
-          ? "Added " + result.added + (result.added === 1 ? " vehicle" : " vehicles") + ". "
-          : "Those vehicles are already on this item. ") +
-          "This product now has " +
-          total +
-          (total === 1 ? " vehicle. " : " vehicles. ") +
-          "Choose another model or tick more engines to add more.",
+        "Added. " + total + (total === 1 ? " vehicle" : " vehicles") + " on this product. Choose another model or engine, then Add.",
       );
       return;
     }
     setLinkNote(linkStatus(result));
   }
 
-  function onMode(next: string) {
-    setMode(next);
-    const ids = idsForAdd(next);
-    if (ids.length) void saveVehicles(ids);
-  }
-
   function onLink() {
-    void saveVehicles(idsForAdd(mode));
+    if (!engineId) {
+      setLinkNote("Choose an engine, then Add.");
+      return;
+    }
+    void saveVehicles([engineId]);
   }
 
   const line = itemLine(item);
-  const addIds = idsForAdd(mode);
-  const canLink = addIds.length > 0 && !busy;
+  const canLink = Boolean(engineId) && !busy;
   const shown = saved.slice(0, 40);
-  const engineChoices = engines.slice(0, 40);
 
   return (
     <BlockStack gap="base">
@@ -388,11 +346,7 @@ export function VehicleBar() {
         {item.oe.length ? <Text>{"OE " + item.oe.join(", ")}</Text> : null}
       </BlockStack>
       <Text fontWeight="bold">VEHICLE</Text>
-      <Text>
-        {linkNote ||
-          note ||
-          "Add more than one model and engine. Vehicles already saved stay on this product."}
-      </Text>
+      <Text>{linkNote || note || "Choose the model and engine, then Add. Saved vehicles stay on this product."}</Text>
       <InlineStack gap="base" blockAlign="center">
         <Select
           label="Make"
@@ -409,46 +363,22 @@ export function VehicleBar() {
           onChange={onModel}
           options={selectOptions(models, (row) => String(row.name || row.title), (row) => String(row.id))}
         />
+        <Select
+          label="Engine"
+          placeholder="Engine"
+          value={engineId}
+          disabled={!modelId}
+          onChange={setEngineId}
+          options={engines.map((row) => ({
+            value: String(row.vehicle_key || row.vehicle_id || row.id),
+            label: engineChoiceLabel(row, engines),
+          }))}
+        />
         <Button variant="primary" disabled={!canLink} onPress={onLink}>
-          {busy ? "Adding…" : "Add selected"}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={!engines.length || busy}
-          onPress={() => onMode(MODE_MODEL)}
-        >
-          Add all for this model
+          {busy ? "Adding…" : "Add"}
         </Button>
         <Button variant="tertiary" onPress={onClear}>
           Clear
-        </Button>
-      </InlineStack>
-      {modelId ? <Text fontWeight="bold">{"Engine · " + engines.length}</Text> : null}
-      {engineChoices.map((row) => {
-        const id = String(row.vehicle_key || row.vehicle_id || row.id);
-        return (
-          <Checkbox
-            key={id}
-            label={catalogueEngineLabel(row)}
-            checked={checked.indexOf(id) >= 0}
-            onChange={(on) => toggleEngine(id, Boolean(on))}
-          />
-        );
-      })}
-      {engines.length > engineChoices.length ? (
-        <Text>
-          Showing {engineChoices.length} of {engines.length} engines. Add all for this model includes every engine.
-        </Text>
-      ) : null}
-      <InlineStack gap="base">
-        <Button variant={mode === MODE_EXACT ? "primary" : "secondary"} onPress={() => setMode(MODE_EXACT)}>
-          Exact Fitment
-        </Button>
-        <Button variant={mode === MODE_MODEL ? "primary" : "secondary"} onPress={() => setMode(MODE_MODEL)}>
-          All for Model
-        </Button>
-        <Button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onPress={() => setMode(MODE_ENGINE)}>
-          All for Engine
         </Button>
       </InlineStack>
       {matchNote ? <Text>{matchNote}</Text> : null}

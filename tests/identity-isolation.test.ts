@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { selectedProductIds } from "../extensions/car-fitment/src/selection.js";
 import {
   catalogueEngineLabel,
+  engineChoiceLabel,
   filterVehicles,
   linkItemToVehicles,
   loadCompatible,
@@ -251,13 +252,13 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /oe_references/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Compatible vehicles/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Add selected/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Add all for this model/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /label="Engine"/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /"Add"/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/makes\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/models\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/engines\?has_vehicles=0/);
-  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Add selected/);
-  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Add all for this model/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /engineChoiceLabel/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /function engineChoiceLabel/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /linkItemToVehicles/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/product-fitment/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/article-create/);
@@ -411,6 +412,12 @@ checkAsync("product card links this item to its vehicles", async () => {
     }),
     "LAND ROVER DISCOVERY IV (L319) 09.2009 - 12.2018 2.7 TD 4x4 2009-2018 140kW",
   );
+  const sport = [
+    { display_name: "LAND ROVER RANGE ROVER SPORT I (L320) 02.2005 - 03.2013 3.0 TD 4x4 2012-2013 183kW" },
+    { display_name: "LAND ROVER RANGE ROVER SPORT I (L320) 02.2005 - 03.2013 5.0 4x4 2009-2013 375kW" },
+  ];
+  assert.equal(engineChoiceLabel(sport[0], sport), "3.0 TD 4x4 2012-2013 183kW");
+  assert.equal(engineChoiceLabel(sport[1], sport), "5.0 4x4 2009-2013 375kW");
   const discovery = [
     { vehicle_key: "ovh-a", engine_code: "276DT", display_name: "2.7 TD 140kW" },
     { vehicle_key: "ovh-b", engine_code: "276DT", display_name: "2.7 TD 140kW later" },
