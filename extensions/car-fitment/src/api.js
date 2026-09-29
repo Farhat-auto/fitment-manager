@@ -13,15 +13,31 @@ function appOrigins() {
   return Array.from(new Set(origins));
 }
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 async function authHeaders() {
   const headers = { "content-type": "application/json" };
   try {
     if (shopify && shopify.sessionToken && typeof shopify.sessionToken.get === "function") {
-      const token = await shopify.sessionToken.get();
+      const token = await withTimeout(shopify.sessionToken.get(), 4000);
       if (token) headers.Authorization = "Bearer " + token;
     }
   } catch (err) {
-    // Session token is required for the Remix BFF; retry without it fails closed.
+    // A hung session token must not leave the product page on the spinner.
   }
   return headers;
 }
@@ -36,7 +52,7 @@ export async function catalogueGet(path) {
   let failure = {};
   for (let i = 0; i < urls.length; i += 1) {
     try {
-      const res = await fetch(urls[i], { headers });
+      const res = await withTimeout(fetch(urls[i], { headers }), 8000);
       let data = {};
       try {
         data = await res.json();

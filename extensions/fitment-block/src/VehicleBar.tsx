@@ -52,20 +52,41 @@ function savedVehicleLabel(row: Row) {
   return [row && row.make_name, row && row.model_name, row && row.generation_name, row && row.engine_code].filter(Boolean).join(" / ");
 }
 
-function readProductGid(api: any) {
-  const product = api?.data?.product;
-  const raw = product && product.id != null ? product.id : product;
-  if (!raw) return "";
-  if (typeof raw === "string") return raw;
-  if (typeof raw.peek === "function") {
+function readSignal(value: any) {
+  let current = value;
+  for (let i = 0; i < 4; i += 1) {
+    if (!current || typeof current.peek !== "function") return current;
     try {
-      return readProductGid({ data: { product: "value" in raw ? raw.value : raw.peek() } });
+      current = "value" in current ? current.value : current.peek();
     } catch (err) {
       return "";
     }
   }
-  if (raw.id) return String(raw.id);
-  return "";
+  return current;
+}
+
+function readProductGid(api: any) {
+  const product = readSignal(api?.data?.product);
+  if (!product) return "";
+  if (typeof product === "string") return product;
+  const id = readSignal(product.id);
+  return typeof id === "string" ? id : "";
+}
+
+function withTimeout(promise: Promise<any>, ms: number) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
 
 const PRODUCT_IDENTITY_QUERY = `
@@ -109,7 +130,7 @@ async function catalogueGet(api: any, path: string) {
   let token = "";
   try {
     if (api?.sessionToken && typeof api.sessionToken.get === "function") {
-      token = await api.sessionToken.get();
+      token = await withTimeout(api.sessionToken.get(), 4000);
     }
   } catch (err) {
     token = "";
@@ -119,7 +140,7 @@ async function catalogueGet(api: any, path: string) {
   let failure: Row = {};
   for (const origin of origins(api)) {
     try {
-      const res = await fetch(origin + "/api/ocean" + path, { headers });
+      const res = await withTimeout(fetch(origin + "/api/ocean" + path, { headers }), 8000);
       const data = (await res.json().catch(() => ({}))) as Row;
       if (!res.ok) {
         failure = { ...data, status: res.status };
@@ -251,10 +272,13 @@ export function VehicleBar() {
     let cancelled = false;
     setSavedNote("Loading Fitment Manager…");
     const productGid = gid.startsWith("gid://") ? gid : "gid://shopify/Product/" + numeric;
-    fetch("shopify:admin/api/graphql.json", {
-      method: "POST",
-      body: JSON.stringify({ query: PRODUCT_IDENTITY_QUERY, variables: { id: productGid } }),
-    })
+    withTimeout(
+      fetch("shopify:admin/api/graphql.json", {
+        method: "POST",
+        body: JSON.stringify({ query: PRODUCT_IDENTITY_QUERY, variables: { id: productGid } }),
+      }),
+      8000,
+    )
       .then((res) => res.json())
       .then(async (payload) => {
         const node = payload?.data?.product || {};
