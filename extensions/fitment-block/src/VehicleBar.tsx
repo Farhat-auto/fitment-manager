@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Banner,
   BlockStack,
   Button,
   InlineStack,
@@ -326,12 +325,18 @@ export function VehicleBar() {
 
   function onEngine(value: string) {
     setEngineId(value);
-    if (!value || busy) return;
+    if (!value) return;
     const ids =
       mode === MODE_MODEL
         ? selectedVehicleIds(engines, value, MODE_MODEL)
         : selectedVehicleIds(engines, value, mode);
     void saveVehicles(ids);
+  }
+
+  function onMode(next: string) {
+    setMode(next);
+    const ids = selectedVehicleIds(engines, engineId, next);
+    if (ids.length) void saveVehicles(ids);
   }
 
   function onLink() {
@@ -350,7 +355,7 @@ export function VehicleBar() {
         {item.oe.length ? <Text>{"OE " + item.oe.join(", ")}</Text> : null}
       </BlockStack>
       <Text fontWeight="bold">VEHICLE</Text>
-      {note ? <Text>{note}</Text> : null}
+      <Text>{linkNote || note || "Select an engine to save it on this item."}</Text>
       <InlineStack gap="base" blockAlign="center">
         <Select
           label="Make"
@@ -383,18 +388,17 @@ export function VehicleBar() {
         </Button>
       </InlineStack>
       <InlineStack gap="base">
-        <Button variant={mode === MODE_EXACT ? "primary" : "secondary"} onPress={() => setMode(MODE_EXACT)}>
+        <Button variant={mode === MODE_EXACT ? "primary" : "secondary"} onPress={() => onMode(MODE_EXACT)}>
           Exact Fitment
         </Button>
-        <Button variant={mode === MODE_MODEL ? "primary" : "secondary"} onPress={() => setMode(MODE_MODEL)}>
+        <Button variant={mode === MODE_MODEL ? "primary" : "secondary"} onPress={() => onMode(MODE_MODEL)}>
           All for Model
         </Button>
-        <Button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onPress={() => setMode(MODE_ENGINE)}>
+        <Button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onPress={() => onMode(MODE_ENGINE)}>
           All for Engine
         </Button>
       </InlineStack>
       {matchNote ? <Text>{matchNote}</Text> : null}
-      {linkNote ? <Banner tone={linkNote.indexOf("Saved") === 0 ? "success" : "warning"} title={linkNote} /> : null}
       <Text fontWeight="bold">
         {saved.length ? "Compatible vehicles · " + saved.length : "Compatible vehicles"}
       </Text>

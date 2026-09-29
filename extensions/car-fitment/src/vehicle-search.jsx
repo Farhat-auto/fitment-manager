@@ -341,10 +341,17 @@ export function VehicleSearch() {
 
   function onEngine(value) {
     setEngineId(value);
-    if (!linked || !value || busy) return;
+    if (!linked || !value) return;
     const ids = selectedVehicleIds(engines, value, mode);
     if (!ids.length) return;
     onLink(ids);
+  }
+
+  function onMode(next) {
+    setMode(next);
+    if (!linked) return;
+    const ids = selectedVehicleIds(engines, engineId, next);
+    if (ids.length) onLink(ids);
   }
 
   function onClear() {
@@ -430,7 +437,10 @@ export function VehicleSearch() {
           <s-text type="strong">{(item && item.title) || "This item"}</s-text>
           {details ? <s-text>{details}</s-text> : null}
           {item && item.oe && item.oe.length ? <s-text>{"OE " + item.oe.join(", ")}</s-text> : null}
-          <s-text>Choose the manufacturer, model, and engine, then link this item.</s-text>
+          <s-text>{linkNote || "Select an engine to save it on this item."}</s-text>
+          <s-button variant="primary" disabled={!canLink} onClick={() => onLink()}>
+            {busy ? "Saving…" : "Save link"}
+          </s-button>
           {matchNote ? <s-text>{matchNote}</s-text> : null}
         </s-stack>
       ) : null}
@@ -488,23 +498,18 @@ export function VehicleSearch() {
             </s-option>
           ))}
         </s-select>
-        {linked ? (
-          <s-button variant="primary" disabled={!canLink} onClick={() => onLink()}>
-            {busy ? "Saving…" : "Save link"}
-          </s-button>
-        ) : null}
         <s-button variant="tertiary" onClick={onClear}>
           Clear
         </s-button>
       </s-stack>
       <s-stack direction="inline" gap="base">
-        <s-button variant={mode === MODE_EXACT ? "primary" : "secondary"} onClick={() => setMode(MODE_EXACT)}>
+        <s-button variant={mode === MODE_EXACT ? "primary" : "secondary"} onClick={() => onMode(MODE_EXACT)}>
           Exact Fitment
         </s-button>
-        <s-button variant={mode === MODE_MODEL ? "primary" : "secondary"} onClick={() => setMode(MODE_MODEL)}>
+        <s-button variant={mode === MODE_MODEL ? "primary" : "secondary"} onClick={() => onMode(MODE_MODEL)}>
           All for Model
         </s-button>
-        <s-button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onClick={() => setMode(MODE_ENGINE)}>
+        <s-button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onClick={() => onMode(MODE_ENGINE)}>
           All for Engine
         </s-button>
       </s-stack>
