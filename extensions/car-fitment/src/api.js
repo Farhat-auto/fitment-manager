@@ -65,6 +65,28 @@ export async function publicCatalogueGet(path) {
 }
 
 export async function catalogueGet(path) {
+  try {
+    const res = await withTimeout(fetch("api/ocean" + path), 15000);
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (err) {
+      data = {};
+    }
+    if (!data || typeof data !== "object") data = {};
+    if (
+      res.ok &&
+      (Array.isArray(data.fitments) ||
+        Array.isArray(data.makes) ||
+        Array.isArray(data.results) ||
+        data.unmapped === true ||
+        data.ok === true)
+    ) {
+      return data;
+    }
+  } catch (err) {
+    // The admin runtime resolves this relative path. An absolute URL is the fallback.
+  }
   const headers = await authHeaders();
   const urls = catalogueUrls(path);
   let failure = {};

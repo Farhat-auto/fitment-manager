@@ -237,8 +237,9 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /oeRefs/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/fitments\?/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/oe\?number=/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /storefront-catalogue/);
-  assert.match(source("extensions/car-fitment/src/api.js"), /publicCatalogueGet/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /fetchAppCatalogue/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /api\/ocean/);
+  assert.match(source("extensions/car-fitment/src/api.js"), /api\/ocean/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /make_name/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /loadCompatible/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);

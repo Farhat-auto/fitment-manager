@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { adminGraphql, catalogueGet, cataloguePages, publicCatalogueGet } from "./api.js";
+import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
 import {
   applyVehicleScope,
   enginesFrom,
+  fetchAppCatalogue,
   filterVehicles,
   loadCompatible,
   modelsFrom,
@@ -236,7 +237,7 @@ export function VehicleSearch() {
             listed: vehiclesFromLabels(product.linkedVehicles),
           };
           const result = await loadCompatible(
-            (path) => publicCatalogueGet(path),
+            (path) => fetchAppCatalogue(path),
             nextItem,
             product.numericId || String(productId).split("/").pop(),
             product.variantNumericId,

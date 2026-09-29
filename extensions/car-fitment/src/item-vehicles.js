@@ -108,9 +108,64 @@ export function catalogueFailure(payload, emptyText) {
   if (!payload || typeof payload !== "object") return emptyText;
   if (payload.status) return emptyText + " (HTTP " + payload.status + ").";
   if (payload.error === "ocean_catalogue_url_missing") return "The vehicle catalogue is not connected.";
-  if (payload.error === "network") return "Compatible vehicles could not be loaded.";
+  if (payload.error === "network") {
+    const detail = String(payload.detail || "").trim();
+    return detail ? emptyText + " (" + detail + ")." : emptyText + ".";
+  }
   if (payload.error) return emptyText + " (" + payload.error + ").";
   return emptyText;
+}
+
+function catalogueTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** Admin blocks resolve a relative app path and attach the session token. */
+export async function fetchAppCatalogue(path) {
+  const urls = ["api/ocean" + path, "https://fitment-manager.vercel.app/api/ocean" + path];
+  let failure = { error: "network" };
+  for (let i = 0; i < urls.length; i += 1) {
+    try {
+      const res = await catalogueTimeout(fetch(urls[i]), 15000);
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (err) {
+        data = {};
+      }
+      if (!data || typeof data !== "object") data = {};
+      if (!res.ok) {
+        failure = Object.assign({ status: res.status }, data);
+        continue;
+      }
+      if (
+        Array.isArray(data.fitments) ||
+        Array.isArray(data.results) ||
+        Array.isArray(data.makes) ||
+        Array.isArray(data.models) ||
+        data.unmapped === true ||
+        data.ok === true
+      ) {
+        return data;
+      }
+      failure = data.error ? data : failure;
+    } catch (err) {
+      failure = { error: "network", detail: String((err && err.message) || "network") };
+    }
+  }
+  return failure;
 }
 
 export async function loadCompatible(get, item, numeric, variantId) {
