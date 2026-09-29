@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BlockStack,
   Button,
+  ChoiceList,
   InlineStack,
   Select,
   Text,
@@ -146,6 +147,7 @@ export function VehicleBar() {
   const [makeId, setMakeId] = useState("");
   const [modelId, setModelId] = useState("");
   const [engineId, setEngineId] = useState("");
+  const [checked, setChecked] = useState<string[]>([]);
   const [note, setNote] = useState("Loading manufacturers…");
   const [matchNote, setMatchNote] = useState("");
   const [linkNote, setLinkNote] = useState("");
@@ -247,6 +249,7 @@ export function VehicleBar() {
     setMakeId(value);
     setModelId("");
     setEngineId("");
+    setChecked([]);
     setModels([]);
     setEngines([]);
     setLinkNote("");
@@ -268,6 +271,7 @@ export function VehicleBar() {
     requestRef.current = request;
     setModelId(value);
     setEngineId("");
+    setChecked([]);
     setEngines([]);
     setLinkNote("");
     if (!value || !makeId) return;
@@ -291,9 +295,23 @@ export function VehicleBar() {
     setMakeId("");
     setModelId("");
     setEngineId("");
+    setChecked([]);
     setModels([]);
     setEngines([]);
     setLinkNote("");
+  }
+
+  function onEngines(value: string | string[]) {
+    const next = Array.isArray(value) ? value : value ? [value] : [];
+    setChecked(next.map((id) => String(id)).filter(Boolean));
+  }
+
+  function selectAllEngines() {
+    setChecked(
+      engines
+        .map((row) => String(row.vehicle_key || row.vehicle_id || row.id))
+        .filter(Boolean),
+    );
   }
 
   async function saveVehicles(ids: string[]) {
@@ -317,9 +335,10 @@ export function VehicleBar() {
       const merged = mergeVehicles(saved, result.rows);
       setSaved(merged);
       setEngineId("");
+      setChecked([]);
       const total = merged.length;
       setLinkNote(
-        "Added. " + total + (total === 1 ? " vehicle" : " vehicles") + " on this product. Choose another model or engine, then Add.",
+        "Added. " + total + (total === 1 ? " vehicle" : " vehicles") + " on this product. Tick more engines, or choose another model.",
       );
       return;
     }
@@ -327,15 +346,15 @@ export function VehicleBar() {
   }
 
   function onLink() {
-    if (!engineId) {
-      setLinkNote("Choose an engine, then Add.");
+    if (!checked.length) {
+      setLinkNote("Tick the engines, then Add.");
       return;
     }
-    void saveVehicles([engineId]);
+    void saveVehicles(checked);
   }
 
   const line = itemLine(item);
-  const canLink = Boolean(engineId) && !busy;
+  const canLink = checked.length > 0 && !busy;
   const shown = saved.slice(0, 40);
 
   return (
@@ -346,7 +365,7 @@ export function VehicleBar() {
         {item.oe.length ? <Text>{"OE " + item.oe.join(", ")}</Text> : null}
       </BlockStack>
       <Text fontWeight="bold">VEHICLE</Text>
-      <Text>{linkNote || note || "Choose the model and engine, then Add. Saved vehicles stay on this product."}</Text>
+      <Text>{linkNote || note || "Tick any engines for this model, then Add. Saved vehicles stay on this product."}</Text>
       <InlineStack gap="base" blockAlign="center">
         <Select
           label="Make"
@@ -363,24 +382,28 @@ export function VehicleBar() {
           onChange={onModel}
           options={selectOptions(models, (row) => String(row.name || row.title), (row) => String(row.id))}
         />
-        <Select
-          label="Engine"
-          placeholder="Engine"
-          value={engineId}
-          disabled={!modelId}
-          onChange={setEngineId}
-          options={engines.map((row) => ({
-            value: String(row.vehicle_key || row.vehicle_id || row.id),
-            label: engineChoiceLabel(row, engines),
-          }))}
-        />
         <Button variant="primary" disabled={!canLink} onPress={onLink}>
-          {busy ? "Adding…" : "Add"}
+          {busy ? "Adding…" : checked.length ? "Add " + checked.length : "Add"}
+        </Button>
+        <Button variant="secondary" disabled={!engines.length || busy} onPress={selectAllEngines}>
+          All engines
         </Button>
         <Button variant="tertiary" onPress={onClear}>
           Clear
         </Button>
       </InlineStack>
+      {modelId ? (
+        <ChoiceList
+          multiple
+          name="engines"
+          value={checked}
+          onChange={onEngines}
+          choices={engines.map((row) => ({
+            id: String(row.vehicle_key || row.vehicle_id || row.id),
+            label: engineChoiceLabel(row, engines),
+          }))}
+        />
+      ) : null}
       {matchNote ? <Text>{matchNote}</Text> : null}
       <Text fontWeight="bold">
         {saved.length ? "Compatible vehicles · " + saved.length : "Compatible vehicles"}

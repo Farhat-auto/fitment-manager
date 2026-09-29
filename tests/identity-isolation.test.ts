@@ -252,8 +252,9 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /oe_references/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Compatible vehicles/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /label="Engine"/);
-  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /"Add"/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /ChoiceList/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /multiple/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /All engines/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/makes\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/models\?has_vehicles=0/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/engines\?has_vehicles=0/);

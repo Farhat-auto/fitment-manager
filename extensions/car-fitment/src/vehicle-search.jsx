@@ -499,6 +499,7 @@ export function VehicleSearch() {
             ))}
           </s-select>
         ) : null}
+        {!linked ? (
         <s-select
           key={"engine-" + generationId + "-" + modelId + "-" + engines.length}
           label="Engine"
@@ -509,13 +510,23 @@ export function VehicleSearch() {
           <s-option value="">Engine</s-option>
           {engines.map((row) => (
             <s-option key={engineKey(row)} value={engineKey(row)}>
-              {linked ? engineChoiceLabel(row, engines) : engineLabel(row)}
+              {engineLabel(row)}
             </s-option>
           ))}
         </s-select>
+        ) : null}
         {linked ? (
-          <s-button variant="primary" disabled={!engineId || busy} onClick={() => onLink([engineId])}>
-            {busy ? "Adding…" : "Add"}
+          <s-button variant="primary" disabled={!checked.length || busy} onClick={() => onLink(checked)}>
+            {busy ? "Adding…" : checked.length ? "Add " + checked.length : "Add"}
+          </s-button>
+        ) : null}
+        {linked ? (
+          <s-button
+            variant="secondary"
+            disabled={!engines.length || busy}
+            onClick={() => setChecked(engines.map(engineKey).filter(Boolean))}
+          >
+            All engines
           </s-button>
         ) : null}
         <s-button variant="tertiary" onClick={onClear}>
@@ -535,6 +546,26 @@ export function VehicleSearch() {
         </s-button>
       </s-stack>
       ) : null}
+      {linked && modelId
+        ? engines.map((row) => {
+            const id = engineKey(row);
+            return (
+              <s-checkbox
+                key={id}
+                label={engineChoiceLabel(row, engines)}
+                checked={checked.indexOf(id) >= 0}
+                onChange={(value) => {
+                  const on = typeof value === "boolean" ? value : Boolean(value && value.target && value.target.checked);
+                  setChecked((current) => {
+                    const next = current.filter((key) => key !== id);
+                    if (on) next.push(id);
+                    return next;
+                  });
+                }}
+              />
+            );
+          })
+        : null}
       {note ? <s-banner tone="warning">{note}</s-banner> : null}
       {linkNote ? <s-banner tone={linkNote.indexOf("Saved") === 0 ? "success" : "warning"}>{linkNote}</s-banner> : null}
       {linked ? <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text> : null}
