@@ -18,6 +18,7 @@ import {
   Text,
 } from "@shopify/ui-extensions-react/admin";
 import { reactExtension, useApi } from "@shopify/ui-extensions-react/admin";
+import { VehicleBar } from "./VehicleBar";
 
 type AssignedVehicle = {
   id: string;
@@ -145,6 +146,8 @@ function FitmentBlock() {
 
   return (
     <BlockStack gap="base">
+      <VehicleBar />
+      <Divider />
       <InlineStack blockAlign="center" inlineAlign="space-between" gap="base">
         <InlineStack blockAlign="center" gap="base">
           <Text fontWeight="bold">Fitment</Text>
