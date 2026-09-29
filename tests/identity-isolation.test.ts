@@ -4,11 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectedProductIds } from "../extensions/car-fitment/src/selection.js";
 import {
+  catalogueEngineLabel,
   filterVehicles,
+  linkItemToVehicles,
   loadCompatible,
   makesFrom,
   parseReferenceList,
   pickCandidate,
+  selectedVehicleIds,
   vehicleModel,
   vehiclesFromLabels,
 } from "../extensions/car-fitment/src/item-vehicles.js";
@@ -245,6 +248,15 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /oe_references/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Compatible vehicles/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /Link this item/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/makes\?has_vehicles=0/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/models\?has_vehicles=0/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /\/engines\?has_vehicles=0/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /Link this item/);
+  assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /linkItemToVehicles/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/product-fitment/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/article-create/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /display_name/);
   assert.doesNotMatch(source("extensions/fitment-block/src/VehicleBar.tsx"), /No makes were returned by the vehicle catalogue/);
   assert.equal(
     source("extensions/fitment-block/src/item-vehicles.js"),
@@ -387,6 +399,45 @@ checkAsync("product card links this item to its vehicles", async () => {
   );
   assert.equal(direct.rows.length, 2);
   assert.equal(direct.matchNote, "");
+  assert.equal(
+    catalogueEngineLabel({
+      display_name: "LAND ROVER DISCOVERY IV (L319) 09.2009 - 12.2018 2.7 TD 4x4 2009-2018 140kW",
+      engine_code: "276DT",
+    }),
+    "LAND ROVER DISCOVERY IV (L319) 09.2009 - 12.2018 2.7 TD 4x4 2009-2018 140kW",
+  );
+  const discovery = [
+    { vehicle_key: "ovh-a", engine_code: "276DT", display_name: "2.7 TD 140kW" },
+    { vehicle_key: "ovh-b", engine_code: "276DT", display_name: "2.7 TD 140kW later" },
+    { vehicle_key: "ovh-c", engine_code: "306DT", display_name: "3.0 TD 180kW" },
+  ];
+  assert.deepEqual(selectedVehicleIds(discovery, "ovh-a", "exact"), ["ovh-a"]);
+  assert.deepEqual(selectedVehicleIds(discovery, "ovh-a", "engine"), ["ovh-a", "ovh-b"]);
+  assert.equal(selectedVehicleIds(discovery, "", "model").length, 3);
+  let fitmentPosts = 0;
+  const linked = await linkItemToVehicles(
+    async (path: string, body: { action?: string; confirm?: boolean; title?: string }) => {
+      assert.equal(body.title, undefined);
+      if (path === "/product-fitment") {
+        fitmentPosts += 1;
+        if (fitmentPosts === 1) return { ok: false, error: "unmapped", unmapped: true };
+        return { ok: true, added_count: 1, fitments: discovery.slice(0, 1) };
+      }
+      if (path === "/article-create") {
+        assert.equal(body.confirm, true);
+        assert.equal(body.action, "create");
+        return { ok: true, applied: true };
+      }
+      return { ok: false, error: "unexpected" };
+    },
+    { sku: "AHE-842.019M1", vendor: "AHE", mpn: "842.019M1", oe: ["LR124259"], handle: "cooler" },
+    "111900662365527",
+    "",
+    ["ovh-a"],
+  );
+  assert.equal(linked.ok, true);
+  assert.equal(linked.added, 1);
+  assert.equal(linked.rows.length, 1);
 });
 
 await Promise.all(pending);

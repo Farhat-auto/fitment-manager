@@ -9,13 +9,15 @@ import {
 } from "@shopify/ui-extensions-react/admin";
 import { useApi } from "@shopify/ui-extensions-react/admin";
 import {
-  applyVehicleScope,
-  enginesFrom,
-  filterVehicles,
+  catalogueEngineLabel,
+  catalogueFailure,
   fetchAppCatalogue,
+  linkItemToVehicles,
+  loadCatalogueRows,
   loadCompatible,
-  modelsFrom,
   parseReferenceList,
+  postAppCatalogue,
+  selectedVehicleIds,
   vehiclesFromLabels,
 } from "./item-vehicles.js";
 
@@ -32,30 +34,23 @@ type ItemInfo = {
   mpn: string;
   oe: string[];
   handle: string;
+  numeric: string;
+  variantId: string;
 };
 
-const EMPTY_ITEM: ItemInfo = { title: "", vendor: "", sku: "", mpn: "", oe: [], handle: "" };
-
-function engineKey(row: Row | undefined) {
-  return String((row && (row.vehicle_key || row.vehicle_id || row.id)) || "");
-}
-
-function compactCode(value: unknown) {
-  return String(value || "").replace(/[\s.]/g, "").toUpperCase();
-}
-
-function engineCode(row: Row | undefined) {
-  return compactCode(row && (row.engine_code || row.detail || row.name || row.title));
-}
-
-function engineLabel(row: Row) {
-  const code = row && row.engine_code ? String(row.engine_code) : "";
-  if (code) return code;
-  return String((row && (row.detail || row.name || row.title)) || "Engine");
-}
+const EMPTY_ITEM: ItemInfo = {
+  title: "",
+  vendor: "",
+  sku: "",
+  mpn: "",
+  oe: [],
+  handle: "",
+  numeric: "",
+  variantId: "",
+};
 
 function savedVehicleLabel(row: Row) {
-  const direct = row && (row.checkbox_label || row.customer_label || row.title || row.detail);
+  const direct = row && (row.checkbox_label || row.customer_label || row.display_name || row.title || row.detail);
   if (direct) return String(direct);
   return [row && row.make_name, row && row.model_name, row && row.generation_name, row && row.engine_code]
     .filter(Boolean)
@@ -130,10 +125,25 @@ function itemLine(item: ItemInfo) {
   return [item.vendor, item.sku ? "SKU " + item.sku : "", item.mpn ? "MPN " + item.mpn : ""].filter(Boolean).join(" · ");
 }
 
+function linkStatus(result: { ok: boolean; added: number; rows: Row[]; errorText: string }) {
+  if (!result.ok) return result.errorText;
+  if (result.added) {
+    return (
+      "Linked " +
+      result.added +
+      (result.added === 1 ? " vehicle" : " vehicles") +
+      " to this item. Fitment stays unverified until it is checked."
+    );
+  }
+  return "This vehicle is already linked to this item.";
+}
+
 export function VehicleBar() {
   const api = useApi() as any;
   const apiRef = useRef(api);
   apiRef.current = api;
+  const itemRef = useRef<ItemInfo>(EMPTY_ITEM);
+  const requestRef = useRef(0);
   const [item, setItem] = useState<ItemInfo>(EMPTY_ITEM);
   const [makes, setMakes] = useState<Row[]>([]);
   const [models, setModels] = useState<Row[]>([]);
@@ -142,9 +152,25 @@ export function VehicleBar() {
   const [modelId, setModelId] = useState("");
   const [engineId, setEngineId] = useState("");
   const [mode, setMode] = useState(MODE_EXACT);
-  const [note, setNote] = useState("Loading compatible vehicles…");
+  const [note, setNote] = useState("");
   const [matchNote, setMatchNote] = useState("");
+  const [linkNote, setLinkNote] = useState("");
+  const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<Row[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCatalogueRows((path: string) => fetchAppCatalogue(path), "/makes?has_vehicles=0", "makes").then((loaded) => {
+      if (cancelled) return;
+      setMakes(loaded.rows || []);
+      if (!(loaded.rows || []).length) {
+        setNote(catalogueFailure(loaded.error, "Makes could not be loaded"));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,8 +180,7 @@ export function VehicleBar() {
     const run = async (gid: string) => {
       const numeric = gid.split("/").pop() || "";
       const productGid = gid.startsWith("gid://") ? gid : "gid://shopify/Product/" + numeric;
-      let nextItem = { ...EMPTY_ITEM };
-      let variantId = "";
+      let nextItem = { ...EMPTY_ITEM, numeric: numeric };
       try {
         const res = (await withTimeout(
           fetch("shopify:admin/api/graphql.json", {
@@ -174,29 +199,26 @@ export function VehicleBar() {
           mpn: String(node.mpn?.value || ""),
           oe: parseReferenceList(node.oeRefs?.value),
           handle: String(node.handle || ""),
+          numeric: numeric,
+          variantId: String(variant.id || "").split("/").pop() || "",
         };
-        variantId = String(variant.id || "").split("/").pop() || "";
         const listed = vehiclesFromLabels(node.linkedVehicles?.value);
         if (listed.length) nextItem = Object.assign(nextItem, { listed });
       } catch (err) {
-        nextItem = { ...EMPTY_ITEM };
+        nextItem = { ...EMPTY_ITEM, numeric: numeric };
       }
       if (cancelled) return;
+      itemRef.current = nextItem;
       setItem(nextItem);
-      const result = await loadCompatible((path: string) => fetchAppCatalogue(path), nextItem, numeric, variantId);
+      const result = await loadCompatible((path: string) => fetchAppCatalogue(path), nextItem, numeric, nextItem.variantId);
       if (cancelled) return;
       const catalogueRows = result.rows || [];
       const rows = catalogueRows.length ? catalogueRows : (nextItem as ItemInfo & { listed?: Row[] }).listed || [];
-      const scope = applyVehicleScope(rows);
       setSaved(rows);
       setMatchNote(result.matchNote || "");
-      setMakes(scope.makes);
-      setModels(scope.models);
-      setEngines(scope.engines);
-      setMakeId(scope.makeId);
-      setModelId(scope.modelId);
-      setEngineId("");
-      setNote(rows.length ? "" : result.errorText || "No compatible vehicles are linked to this item.");
+      if (!rows.length && result.errorText && result.errorText.indexOf("could not be loaded") >= 0) {
+        setLinkNote(result.errorText);
+      }
     };
 
     const look = () => {
@@ -216,43 +238,86 @@ export function VehicleBar() {
     };
   }, []);
 
-  function onMake(value: string) {
+  async function onMake(value: string) {
+    const request = requestRef.current + 1;
+    requestRef.current = request;
     setMakeId(value);
     setModelId("");
     setEngineId("");
+    setModels([]);
     setEngines([]);
-    if (!value) {
-      setModels([]);
-      return;
-    }
-    const nextModels = modelsFrom(saved, value);
-    setModels(nextModels);
-    if (nextModels.length === 1) {
-      const nextModel = String(nextModels[0].id);
-      setModelId(nextModel);
-      setEngines(enginesFrom(saved, value, nextModel));
+    setLinkNote("");
+    if (!value) return;
+    const loaded = await loadCatalogueRows(
+      (path: string) => fetchAppCatalogue(path),
+      "/models?has_vehicles=0&make_id=" + encodeURIComponent(value),
+      "models",
+    );
+    if (requestRef.current !== request) return;
+    setModels(loaded.rows || []);
+    if (!(loaded.rows || []).length) {
+      setLinkNote(catalogueFailure(loaded.error, "No models were returned for this make"));
     }
   }
 
-  function onModel(value: string) {
+  async function onModel(value: string) {
+    const request = requestRef.current + 1;
+    requestRef.current = request;
     setModelId(value);
     setEngineId("");
-    setEngines(value ? enginesFrom(saved, makeId, value) : []);
+    setEngines([]);
+    setLinkNote("");
+    if (!value || !makeId) return;
+    const loaded = await loadCatalogueRows(
+      (path: string) => fetchAppCatalogue(path),
+      "/engines?has_vehicles=0&make_id=" +
+        encodeURIComponent(makeId) +
+        "&model_id=" +
+        encodeURIComponent(value),
+      ["engines", "types"],
+    );
+    if (requestRef.current !== request) return;
+    setEngines(loaded.rows || []);
+    if (!(loaded.rows || []).length) {
+      setLinkNote(catalogueFailure(loaded.error, "No engines were returned for this model"));
+    }
   }
 
   function onClear() {
-    const scope = applyVehicleScope(saved);
-    setMakeId(scope.makeId);
-    setModelId(scope.modelId);
-    setEngines(scope.engines);
-    setModels(scope.models);
+    requestRef.current += 1;
+    setMakeId("");
+    setModelId("");
     setEngineId("");
+    setModels([]);
+    setEngines([]);
     setMode(MODE_EXACT);
+    setLinkNote("");
   }
 
-  const visible = filterVehicles(saved, makeId, modelId, engineId, mode, engineKey, engineCode);
-  const shown = visible.slice(0, 40);
+  async function onLink() {
+    const ids = selectedVehicleIds(engines, engineId, mode);
+    if (!ids.length) {
+      setLinkNote("Select a vehicle to link this item.");
+      return;
+    }
+    const current = itemRef.current;
+    setBusy(true);
+    setLinkNote("Linking this item…");
+    const result = await linkItemToVehicles(
+      (path: string, body: Row) => postAppCatalogue(path, body),
+      current,
+      current.numeric,
+      current.variantId,
+      ids,
+    );
+    setBusy(false);
+    setLinkNote(linkStatus(result));
+    if (result.ok && result.rows.length) setSaved(result.rows);
+  }
+
   const line = itemLine(item);
+  const canLink = selectedVehicleIds(engines, engineId, mode).length > 0 && !busy;
+  const shown = saved.slice(0, 40);
 
   return (
     <BlockStack gap="base">
@@ -261,63 +326,65 @@ export function VehicleBar() {
         {line ? <Text>{line}</Text> : null}
         {item.oe.length ? <Text>{"OE " + item.oe.join(", ")}</Text> : null}
       </BlockStack>
+      <Text fontWeight="bold">VEHICLE</Text>
+      <Text>Choose the manufacturer, model, and engine, then link this item.</Text>
+      <InlineStack gap="base" blockAlign="center">
+        <Select
+          label="Make"
+          placeholder="Make"
+          value={makeId}
+          onChange={onMake}
+          options={selectOptions(makes, (row) => String(row.name || row.title), (row) => String(row.id))}
+        />
+        <Select
+          label="Model"
+          placeholder="Model"
+          value={modelId}
+          disabled={!makeId}
+          onChange={onModel}
+          options={selectOptions(models, (row) => String(row.name || row.title), (row) => String(row.id))}
+        />
+        <Select
+          label="Engine"
+          placeholder="Engine"
+          value={engineId}
+          disabled={!modelId}
+          onChange={setEngineId}
+          options={selectOptions(engines, catalogueEngineLabel, (row) => String(row.vehicle_key || row.vehicle_id || row.id))}
+        />
+        <Button variant="tertiary" onPress={onClear}>
+          Clear
+        </Button>
+      </InlineStack>
+      <InlineStack gap="base">
+        <Button variant={mode === MODE_EXACT ? "primary" : "secondary"} onPress={() => setMode(MODE_EXACT)}>
+          Exact Fitment
+        </Button>
+        <Button variant={mode === MODE_MODEL ? "primary" : "secondary"} onPress={() => setMode(MODE_MODEL)}>
+          All for Model
+        </Button>
+        <Button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onPress={() => setMode(MODE_ENGINE)}>
+          All for Engine
+        </Button>
+      </InlineStack>
+      <Button variant="primary" disabled={!canLink} onPress={onLink}>
+        {busy ? "Linking this item…" : "Link this item"}
+      </Button>
+      {note ? <Banner tone="warning" title={note} /> : null}
+      {matchNote ? <Text>{matchNote}</Text> : null}
+      {linkNote ? <Banner tone={linkNote.indexOf("Linked ") === 0 ? "success" : "warning"} title={linkNote} /> : null}
       <Text fontWeight="bold">
         {saved.length ? "Compatible vehicles · " + saved.length : "Compatible vehicles"}
       </Text>
-      {matchNote ? <Text>{matchNote}</Text> : null}
-      {note ? <Banner tone="warning" title={note} /> : null}
-      {saved.length ? (
-        <InlineStack gap="base" blockAlign="center">
-          <Text fontWeight="bold">VEHICLE</Text>
-          <Select
-            label="Make"
-            placeholder="Make"
-            value={makeId}
-            onChange={onMake}
-            options={selectOptions(makes, (row) => String(row.name), (row) => String(row.id))}
-          />
-          <Select
-            label="Model"
-            placeholder="Model"
-            value={modelId}
-            disabled={!makeId}
-            onChange={onModel}
-            options={selectOptions(models, (row) => String(row.name), (row) => String(row.id))}
-          />
-          <Select
-            label="Engine"
-            placeholder="Engine"
-            value={engineId}
-            disabled={!modelId}
-            onChange={setEngineId}
-            options={selectOptions(engines, engineLabel, engineKey)}
-          />
-          <Button variant="tertiary" onPress={onClear}>
-            Clear
-          </Button>
-        </InlineStack>
-      ) : null}
-      {saved.length ? (
-        <InlineStack gap="base">
-          <Button variant={mode === MODE_EXACT ? "primary" : "secondary"} onPress={() => setMode(MODE_EXACT)}>
-            Exact Fitment
-          </Button>
-          <Button variant={mode === MODE_MODEL ? "primary" : "secondary"} onPress={() => setMode(MODE_MODEL)}>
-            All for Model
-          </Button>
-          <Button variant={mode === MODE_ENGINE ? "primary" : "secondary"} onPress={() => setMode(MODE_ENGINE)}>
-            All for Engine
-          </Button>
-        </InlineStack>
-      ) : null}
+      {!saved.length ? <Text>This item is not linked to a vehicle yet.</Text> : null}
       {shown.map((row) => (
         <Text key={String(row.fitment_id || row.vehicle_id || row.vehicle_key || savedVehicleLabel(row))}>
           {(savedVehicleLabel(row) || "Vehicle") + (row.verification_status ? " · " + row.verification_status : "")}
         </Text>
       ))}
-      {visible.length > shown.length ? (
+      {saved.length > shown.length ? (
         <Text>
-          Showing {shown.length} of {visible.length} compatible vehicles
+          Showing {shown.length} of {saved.length} compatible vehicles
         </Text>
       ) : null}
     </BlockStack>

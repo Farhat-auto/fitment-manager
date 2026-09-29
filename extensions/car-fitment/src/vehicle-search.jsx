@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
 import {
-  applyVehicleScope,
-  enginesFrom,
+  catalogueEngineLabel,
   fetchAppCatalogue,
-  filterVehicles,
+  linkItemToVehicles,
   loadCompatible,
-  modelsFrom,
   parseReferenceList,
+  postAppCatalogue,
+  selectedVehicleIds,
   vehiclesFromLabels,
 } from "./item-vehicles.js";
 import { PRODUCT_QUERY, productFromNode } from "./payload.js";
@@ -32,14 +32,6 @@ function engineKey(row) {
   return String((row && (row.vehicle_key || row.vehicle_id || row.id)) || "");
 }
 
-function compactCode(value) {
-  return String(value || "").replace(/[\s.]/g, "").toUpperCase();
-}
-
-function engineCode(row) {
-  return compactCode(row && (row.engine_code || row.detail || row.name || row.title));
-}
-
 function optionName(row) {
   return (row && (row.name || row.title || row.detail)) || "";
 }
@@ -52,9 +44,7 @@ function generationLabel(row) {
 }
 
 function engineLabel(row) {
-  const code = row && row.engine_code ? String(row.engine_code) : "";
-  if (code) return code;
-  return (row && (row.detail || row.name || row.title)) || "Engine";
+  return catalogueEngineLabel(row);
 }
 
 function savedVehicleLabel(row) {
@@ -72,18 +62,7 @@ function modeLabel(mode) {
 }
 
 function vehicleKeys(mode, engines, engineId) {
-  const rows = Array.isArray(engines) ? engines : [];
-  if (mode === MODE_EXACT) return engineId ? [engineId] : [];
-  if (mode === MODE_ENGINE) {
-    const selected = rows.find((row) => engineKey(row) === engineId);
-    const code = engineCode(selected);
-    const matched = code
-      ? rows.map((row) => (engineCode(row) === code ? engineKey(row) : "")).filter(Boolean)
-      : [];
-    if (matched.length) return matched;
-    return engineId ? [engineId] : [];
-  }
-  return rows.map(engineKey).filter(Boolean);
+  return selectedVehicleIds(engines, engineId, mode);
 }
 
 function currentProductId() {
@@ -171,47 +150,34 @@ export function VehicleSearch() {
   const [linked, setLinked] = useState(false);
   const [item, setItem] = useState(null);
   const [matchNote, setMatchNote] = useState("");
-  const productOwned = useRef(false);
+  const [linkNote, setLinkNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const itemRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
-    let timer;
-    let tries = 0;
-    const loadCatalogue = () => {
-      cataloguePages("/makes?has_vehicles=0", "makes")
-        .then(async (rows) => {
-          if (cancelled || productOwned.current) return;
-          if (rows.length) {
-            setMakes(rows);
-            setNote("");
-            return;
-          }
-          const payload = await catalogueGet("/makes?has_vehicles=0&limit=5&offset=0");
-          if (cancelled || productOwned.current) return;
-          const status = payload && payload.status;
-          setNote(
-            status
-              ? "Makes could not be loaded (HTTP " + status + ")."
-              : "No makes were returned by the vehicle catalogue.",
-          );
-        })
-        .catch(() => {
-          if (!cancelled && !productOwned.current) setNote("Makes could not be loaded.");
-        });
-    };
-    const waitForProduct = () => {
-      if (cancelled || productOwned.current || currentProductId()) return;
-      tries += 1;
-      if (tries < 8) {
-        timer = setTimeout(waitForProduct, 300);
-        return;
-      }
-      loadCatalogue();
-    };
-    waitForProduct();
+    cataloguePages("/makes?has_vehicles=0", "makes")
+      .then(async (rows) => {
+        if (cancelled) return;
+        if (rows.length) {
+          setMakes(rows);
+          setNote("");
+          return;
+        }
+        const payload = await catalogueGet("/makes?has_vehicles=0&limit=5&offset=0");
+        if (cancelled) return;
+        const status = payload && payload.status;
+        setNote(
+          status
+            ? "Makes could not be loaded (HTTP " + status + ")."
+            : "No makes were returned by the vehicle catalogue.",
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setNote("Makes could not be loaded.");
+      });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, []);
 
@@ -220,9 +186,7 @@ export function VehicleSearch() {
     let timer;
     let tries = 0;
     const run = (productId) => {
-      productOwned.current = true;
       setLinked(true);
-      setNote("Loading compatible vehicles…");
       adminGraphql(PRODUCT_QUERY, { id: productId })
         .then(async (payload) => {
           const node = ((payload || {}).data || {}).product || {};
@@ -234,12 +198,14 @@ export function VehicleSearch() {
             mpn: product.mpn,
             oe: parseReferenceList(product.oeRefs),
             handle: product.handle,
+            numericId: product.numericId || String(productId).split("/").pop(),
+            variantNumericId: product.variantNumericId,
             listed: vehiclesFromLabels(product.linkedVehicles),
           };
           const result = await loadCompatible(
             (path) => fetchAppCatalogue(path),
             nextItem,
-            product.numericId || String(productId).split("/").pop(),
+            nextItem.numericId,
             product.variantNumericId,
           );
           return { nextItem: nextItem, result: result };
@@ -248,21 +214,17 @@ export function VehicleSearch() {
           if (cancelled || !loaded) return;
           const catalogueRows = loaded.result.rows || [];
           const rows = catalogueRows.length ? catalogueRows : loaded.nextItem.listed || [];
-          const scope = applyVehicleScope(rows);
+          itemRef.current = loaded.nextItem;
           setItem(loaded.nextItem);
           setSaved(rows);
           setMatchNote(loaded.result.matchNote || "");
-          setMakes(scope.makes);
-          setModels(scope.models);
-          setEngines(scope.engines);
-          setMakeId(scope.makeId);
-          setModelId(scope.modelId);
-          setEngineId("");
           setSavedNote(rows.length ? "Compatible vehicles · " + rows.length : "");
-          setNote(rows.length ? "" : loaded.result.errorText || "No compatible vehicles are linked to this item.");
+          if (!rows.length && loaded.result.errorText && loaded.result.errorText.indexOf("could not be loaded") >= 0) {
+            setLinkNote(loaded.result.errorText);
+          }
         })
         .catch(() => {
-          if (!cancelled) setNote("Compatible vehicles could not be loaded.");
+          if (!cancelled) setLinkNote("Compatible vehicles could not be loaded.");
         });
     };
     const look = () => {
@@ -292,17 +254,6 @@ export function VehicleSearch() {
     setProducts([]);
     setProductNote("");
     if (!value) return;
-    if (linked) {
-      const nextModels = modelsFrom(saved, value);
-      setModels(nextModels);
-      if (nextModels.length === 1) {
-        const nextModel = String(nextModels[0].id);
-        setModelId(nextModel);
-        setEngines(enginesFrom(saved, value, nextModel));
-      }
-      setNote("");
-      return;
-    }
     const rows = await cataloguePages(
       "/models?has_vehicles=0&make_id=" + encodeURIComponent(value),
       "models",
@@ -319,10 +270,6 @@ export function VehicleSearch() {
     setEngines([]);
     setProducts([]);
     setProductNote("");
-    if (linked) {
-      setEngines(value ? enginesFrom(saved, makeId, value) : []);
-      return;
-    }
     if (!value || !makeId) return;
     const query =
       "make_id=" + encodeURIComponent(makeId) + "&model_id=" + encodeURIComponent(value) + "&has_vehicles=0";
@@ -358,21 +305,45 @@ export function VehicleSearch() {
     setEngines(engineRows);
   }
 
+  async function onLink() {
+    const current = itemRef.current;
+    const ids = selectedVehicleIds(engines, engineId, mode);
+    if (!current || !ids.length) {
+      setLinkNote("Select a vehicle to link this item.");
+      return;
+    }
+    setBusy(true);
+    setLinkNote("Linking this item…");
+    const result = await linkItemToVehicles(
+      (path, body) => postAppCatalogue(path, body),
+      current,
+      current.numericId,
+      current.variantNumericId,
+      ids,
+    );
+    setBusy(false);
+    if (!result.ok) {
+      setLinkNote(result.errorText);
+      return;
+    }
+    if (result.rows.length) setSaved(result.rows);
+    setSavedNote(result.rows.length ? "Compatible vehicles · " + result.rows.length : "");
+    setLinkNote(
+      result.added
+        ? "Linked " +
+            result.added +
+            (result.added === 1 ? " vehicle" : " vehicles") +
+            " to this item. Fitment stays unverified until it is checked."
+        : "This vehicle is already linked to this item.",
+    );
+  }
+
   function onClear() {
     setEngineId("");
     setMode(MODE_EXACT);
     setProducts([]);
     setProductNote("");
-    if (linked) {
-      const scope = applyVehicleScope(saved);
-      setMakeId(scope.makeId);
-      setModelId(scope.modelId);
-      setModels(scope.models);
-      setEngines(scope.engines);
-      setGenerations([]);
-      setNote(saved.length ? "" : note);
-      return;
-    }
+    setLinkNote("");
     setMakeId("");
     setModelId("");
     setGenerationId("");
@@ -438,8 +409,9 @@ export function VehicleSearch() {
   const contextBits = [makeName, modelName, generationName, selectedEngine ? engineLabel(selectedEngine) : ""].filter(Boolean);
   const contextLabel = contextBits.length ? contextBits.join(" - ") + " - " + modeLabel(mode) : "";
   const shown = products.slice(0, 50);
-  const visible = linked ? filterVehicles(saved, makeId, modelId, engineId, mode, engineKey, engineCode) : [];
+  const visible = linked ? saved : [];
   const visibleShown = visible.slice(0, 40);
+  const canLink = linked && selectedVehicleIds(engines, engineId, mode).length > 0 && !busy;
   const details = itemLine(item);
 
   return (
@@ -449,11 +421,10 @@ export function VehicleSearch() {
           <s-text type="strong">{(item && item.title) || "This item"}</s-text>
           {details ? <s-text>{details}</s-text> : null}
           {item && item.oe && item.oe.length ? <s-text>{"OE " + item.oe.join(", ")}</s-text> : null}
-          <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text>
+          <s-text>Choose the manufacturer, model, and engine, then link this item.</s-text>
           {matchNote ? <s-text>{matchNote}</s-text> : null}
         </s-stack>
       ) : null}
-      {!linked || makes.length ? (
       <s-stack direction="inline" gap="base">
         <s-text type="strong">VEHICLE</s-text>
         <s-select key={"make-" + makes.length} label="Make" value={makeId} onChange={(event) => onMake(fieldValue(event))}>
@@ -512,8 +483,6 @@ export function VehicleSearch() {
           Clear
         </s-button>
       </s-stack>
-      ) : null}
-      {!linked || makes.length ? (
       <s-stack direction="inline" gap="base">
         <s-button variant={mode === MODE_EXACT ? "primary" : "secondary"} onClick={() => setMode(MODE_EXACT)}>
           Exact Fitment
@@ -525,8 +494,15 @@ export function VehicleSearch() {
           All for Engine
         </s-button>
       </s-stack>
+      {linked ? (
+        <s-button variant="primary" disabled={!canLink} onClick={onLink}>
+          {busy ? "Linking this item…" : "Link this item"}
+        </s-button>
       ) : null}
       {note ? <s-banner tone="warning">{note}</s-banner> : null}
+      {linkNote ? <s-banner tone={linkNote.indexOf("Linked ") === 0 ? "success" : "warning"}>{linkNote}</s-banner> : null}
+      {linked ? <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text> : null}
+      {linked && !saved.length ? <s-text>This item is not linked to a vehicle yet.</s-text> : null}
       {contextLabel ? <s-banner tone="success">{contextLabel}</s-banner> : null}
       {productNote ? <s-banner tone="info">{productNote}</s-banner> : null}
       {visibleShown.map((row) => (
