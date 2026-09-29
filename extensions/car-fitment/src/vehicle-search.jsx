@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { adminGraphql, catalogueGet, cataloguePages } from "./api.js";
+import { adminGraphql, catalogueGet, cataloguePages, publicCatalogueGet } from "./api.js";
 import {
   applyVehicleScope,
   enginesFrom,
@@ -7,6 +7,7 @@ import {
   loadCompatible,
   modelsFrom,
   parseReferenceList,
+  vehiclesFromLabels,
 } from "./item-vehicles.js";
 import { PRODUCT_QUERY, productFromNode } from "./payload.js";
 import { selectedProductIds } from "./selection.js";
@@ -232,9 +233,10 @@ export function VehicleSearch() {
             mpn: product.mpn,
             oe: parseReferenceList(product.oeRefs),
             handle: product.handle,
+            listed: vehiclesFromLabels(product.linkedVehicles),
           };
           const result = await loadCompatible(
-            (path) => catalogueGet(path),
+            (path) => publicCatalogueGet(path),
             nextItem,
             product.numericId || String(productId).split("/").pop(),
             product.variantNumericId,
@@ -243,7 +245,8 @@ export function VehicleSearch() {
         })
         .then((loaded) => {
           if (cancelled || !loaded) return;
-          const rows = loaded.result.rows || [];
+          const catalogueRows = loaded.result.rows || [];
+          const rows = catalogueRows.length ? catalogueRows : loaded.nextItem.listed || [];
           const scope = applyVehicleScope(rows);
           setItem(loaded.nextItem);
           setSaved(rows);

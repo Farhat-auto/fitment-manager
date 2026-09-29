@@ -15,6 +15,7 @@ query OceanCarFitmentProduct($id: ID!) {
     zeroFitment: metafield(namespace: "ocean", key: "zero_fitment") { value }
     mpn: metafield(namespace: "custom", key: "mpn") { value }
     oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
+    linkedVehicles: metafield(namespace: "custom", key: "linked_vehicle") { value }
     crossRefs: metafield(namespace: "custom", key: "cross_references") { value }
     legacyVehicles: metafield(namespace: "fitment", key: "vehicles") { value }
     customVehicles: metafield(namespace: "custom", key: "compatible_vehicles") { value }
@@ -61,6 +62,7 @@ export function productFromNode(node) {
     inventory: variant.inventoryQuantity,
     mpn: ((node && node.mpn) || {}).value || "",
     oeRefs: ((node && node.oeRefs) || {}).value || "",
+    linkedVehicles: ((node && node.linkedVehicles) || {}).value || "",
     crossRefs: ((node && node.crossRefs) || {}).value || "",
     legacyVehicles: ((node && node.legacyVehicles) || {}).value || "",
     customVehicles: ((node && node.customVehicles) || {}).value || "",

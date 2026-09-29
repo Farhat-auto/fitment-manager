@@ -15,6 +15,7 @@ import {
   loadCompatible,
   modelsFrom,
   parseReferenceList,
+  vehiclesFromLabels,
 } from "./item-vehicles.js";
 
 const MODE_EXACT = "exact";
@@ -112,19 +113,26 @@ query FitmentManagerProduct($id: ID!) {
     vendor
     mpn: metafield(namespace: "custom", key: "mpn") { value }
     oeRefs: metafield(namespace: "custom", key: "oe_references") { value }
+    linkedVehicles: metafield(namespace: "custom", key: "linked_vehicle") { value }
     variants(first: 1) { nodes { id sku } }
   }
 }
 `;
 
-function origins(api: any) {
-  const list = ["https://fitment-manager.vercel.app"];
-  const appUrl = String(api?.appUrl || "").replace(/\/+$/, "");
-  if (appUrl.indexOf("http") === 0) list.unshift(appUrl);
-  return Array.from(new Set(list));
+async function fetchJson(url: string, headers: Record<string, string>, ms: number) {
+  try {
+    const res = (await withTimeout(fetch(url, { headers }), ms)) as Response;
+    const data = (await res.json().catch(() => ({}))) as Row;
+    if (!res.ok) return { ...data, status: res.status };
+    return data || {};
+  } catch (err) {
+    return { error: "network", detail: String((err as Error)?.message || "network") };
+  }
 }
 
 async function catalogueGet(api: any, path: string) {
+  const open = await fetchJson("https://fitment-manager.vercel.app/storefront-catalogue" + path, {}, 5000);
+  if (open && !open.error && !open.status) return open;
   let token = "";
   try {
     if (api?.sessionToken && typeof api.sessionToken.get === "function") {
@@ -133,23 +141,11 @@ async function catalogueGet(api: any, path: string) {
   } catch (err) {
     token = "";
   }
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { accept: "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  let failure: Row = {};
-  for (const origin of origins(api)) {
-    try {
-      const res = await withTimeout(fetch(origin + "/api/ocean" + path, { headers }), 8000);
-      const data = (await res.json().catch(() => ({}))) as Row;
-      if (!res.ok) {
-        failure = { ...data, status: res.status };
-        continue;
-      }
-      return data || {};
-    } catch (err) {
-      failure = { error: "network" };
-    }
-  }
-  return failure;
+  const authed = await fetchJson("https://fitment-manager.vercel.app/api/ocean" + path, headers, 12000);
+  if (authed && !authed.error) return authed;
+  return open && open.error ? open : authed;
 }
 
 function selectOptions(rows: Row[], labelOf: (row: Row) => string, valueOf: (row: Row) => string) {
@@ -208,6 +204,8 @@ export function VehicleBar() {
           handle: String(node.handle || ""),
         };
         variantId = String(variant.id || "").split("/").pop() || "";
+        const listed = vehiclesFromLabels(node.linkedVehicles?.value);
+        if (listed.length) nextItem = Object.assign(nextItem, { listed });
       } catch (err) {
         nextItem = { ...EMPTY_ITEM };
       }
@@ -215,7 +213,8 @@ export function VehicleBar() {
       setItem(nextItem);
       const result = await loadCompatible((path: string) => catalogueGet(apiRef.current, path), nextItem, numeric, variantId);
       if (cancelled) return;
-      const rows = result.rows || [];
+      const catalogueRows = result.rows || [];
+      const rows = catalogueRows.length ? catalogueRows : (nextItem as ItemInfo & { listed?: Row[] }).listed || [];
       const scope = applyVehicleScope(rows);
       setSaved(rows);
       setMatchNote(result.matchNote || "");

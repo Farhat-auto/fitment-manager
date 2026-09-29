@@ -38,12 +38,6 @@ const PUBLIC_GET = new Set([
   "fitments",
 ]);
 
-const ALLOWED_ORIGINS = new Set([
-  "https://www.oceancarparts.com",
-  "https://oceancarparts.com",
-  "https://g5uxzq-gb.myshopify.com",
-]);
-
 function routeName(params: Record<string, string | undefined>) {
   return String(params["*"] || "")
     .replace(/^\/+|\/+$/g, "")
@@ -56,14 +50,11 @@ const CHANGING_CATALOGUE = new Set([
   "storefront-compatibility", "catalogue-search", "oe-family", "oe",
 ]);
 
-function corsHeaders(request: Request, route: string) {
-  const origin = request.headers.get("Origin") || "";
+function corsHeaders(_request: Request, route: string) {
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has(origin)
-      ? origin
-      : "https://www.oceancarparts.com",
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Cache-Control": CHANGING_CATALOGUE.has(route)
       ? "no-store, max-age=0"
       : "public, max-age=60, stale-while-revalidate=300",

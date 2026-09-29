@@ -10,6 +10,7 @@ import {
   parseReferenceList,
   pickCandidate,
   vehicleModel,
+  vehiclesFromLabels,
 } from "../extensions/car-fitment/src/item-vehicles.js";
 import {
   UNVERIFIED,
@@ -234,9 +235,10 @@ check("CAR FITMENT product-page action leaves the host spinner", () => {
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /\/products\?vehicle_key=/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /loadCompatible/);
   assert.match(source("extensions/car-fitment/src/vehicle-search.jsx"), /oeRefs/);
-  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/product-fitment\?/);
-  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /oe_references/);
-  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /article-candidates/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/fitments\?/);
+  assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /\/oe\?number=/);
+  assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /storefront-catalogue/);
+  assert.match(source("extensions/car-fitment/src/api.js"), /publicCatalogueGet/);
   assert.match(source("extensions/car-fitment/src/item-vehicles.js"), /make_name/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /loadCompatible/);
   assert.match(source("extensions/fitment-block/src/VehicleBar.tsx"), /data\.selected/);
@@ -319,6 +321,8 @@ check("legacy writes are disabled", () => {
 
 checkAsync("product card links this item to its vehicles", async () => {
   assert.deepEqual(parseReferenceList('["LR124259","LR061969"]'), ["LR124259", "LR061969"]);
+  assert.equal(vehiclesFromLabels('["LAND ROVER / Range Rover Sport / L320 / 276DT"]').length, 1);
+  assert.equal(vehiclesFromLabels('["LAND ROVER / Range Rover Sport / L320 / 276DT"]')[0].make_name, "LAND ROVER");
   assert.deepEqual(parseReferenceList("LR124259, LR061969"), ["LR124259", "LR061969"]);
   const rows = [
     {
@@ -359,14 +363,12 @@ checkAsync("product card links this item to its vehicles", async () => {
   );
   const result = await loadCompatible(
     async (path: string) => {
-      if (path.startsWith("/product-fitment?shopify_product_id=")) return { fitments: [] };
-      if (path.startsWith("/article-candidates?")) {
-        assert.match(path, /oe_references=LR124259/);
-        return {
-          candidates: [{ sku: "AHE-842", brand: "AHE", mpn: "842.019M1", fitment_count: 1, discovery_only: true }],
-        };
+      if (path.startsWith("/fitments?shopify_product_id=")) return { fitments: [], unmapped: true };
+      if (path.startsWith("/oe?number=")) {
+        assert.match(path, /number=LR124259/);
+        return { results: [{ sku: "AHE-842", brand: "AHE", mpn: "842.019M1" }] };
       }
-      if (path.startsWith("/product-fitment?sku=")) return { fitments: rows };
+      if (path.startsWith("/fitments?sku=")) return { fitments: rows };
       return { status: 500 };
     },
     { sku: "", vendor: "AHE", mpn: "", oe: ["LR124259"], handle: "" },
@@ -375,7 +377,7 @@ checkAsync("product card links this item to its vehicles", async () => {
   );
   assert.equal(result.rows.length, 2);
   assert.match(result.matchNote, /AHE 842\.019M1/);
-  assert.match(result.matchNote, /OE reference/);
+  assert.match(result.matchNote, /OE LR124259/);
   const direct = await loadCompatible(
     async () => ({ fitments: rows }),
     { sku: "842.019M1", vendor: "AHE", mpn: "842.019M1", oe: ["LR124259"], handle: "cooler" },

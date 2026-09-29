@@ -46,6 +46,24 @@ function catalogueUrls(path) {
   return appOrigins().map((origin) => origin + "/api/ocean" + path);
 }
 
+export async function publicCatalogueGet(path) {
+  const url = "https://fitment-manager.vercel.app/storefront-catalogue" + path;
+  try {
+    const res = await withTimeout(fetch(url), 5000);
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (err) {
+      data = {};
+    }
+    if (!data || typeof data !== "object") data = {};
+    if (res.ok) return data;
+  } catch (err) {
+    // The open catalogue can be blocked from the admin sandbox. The app route below is allowed.
+  }
+  return catalogueGet(path);
+}
+
 export async function catalogueGet(path) {
   const headers = await authHeaders();
   const urls = catalogueUrls(path);

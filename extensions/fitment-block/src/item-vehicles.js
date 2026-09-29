@@ -121,7 +121,7 @@ export async function loadCompatible(get, item, numeric, variantId) {
   if (item && item.handle) params.set("handle", item.handle);
   if (item && item.vendor) params.set("brand", item.vendor);
   if (item && item.mpn) params.set("mpn", item.mpn);
-  const direct = await get("/product-fitment?" + params.toString());
+  const direct = await get("/fitments?" + params.toString());
   const directRows = direct && Array.isArray(direct.fitments) ? direct.fitments : null;
   if (directRows && directRows.length) {
     return { rows: directRows, matchNote: "", errorText: "" };
@@ -133,41 +133,68 @@ export async function loadCompatible(get, item, numeric, variantId) {
       errorText: catalogueFailure(direct, "Compatible vehicles could not be loaded"),
     };
   }
-  const extra = new URLSearchParams(params);
-  const oe = (item && item.oe) || [];
-  if (oe.length) extra.set("oe_references", oe.join(","));
-  const found = await get("/article-candidates?" + extra.toString());
-  const candidates = found && Array.isArray(found.candidates) ? found.candidates : null;
-  if (!candidates) {
+  const numbers = [];
+  const seenNumbers = {};
+  ((item && item.oe) || []).forEach((number) => {
+    const text = String(number || "").trim();
+    const key = text.toUpperCase();
+    if (!text || seenNumbers[key] || numbers.length >= 8) return;
+    seenNumbers[key] = true;
+    numbers.push(text);
+  });
+  const lookups = await Promise.all(
+    numbers.map((number) => get("/oe?number=" + encodeURIComponent(number))),
+  );
+  const seenSku = {};
+  for (let index = 0; index < lookups.length; index += 1) {
+    const found = lookups[index];
+    const results = found && Array.isArray(found.results) ? found.results : [];
+    for (let hit = 0; hit < results.length; hit += 1) {
+      const chosen = results[hit];
+      const sku = chosen && chosen.sku;
+      if (!sku || seenSku[sku]) continue;
+      seenSku[sku] = true;
+      const bySku = await get("/fitments?sku=" + encodeURIComponent(sku));
+      const rows = bySku && Array.isArray(bySku.fitments) ? bySku.fitments : [];
+      if (!rows.length) continue;
+      const label = [chosen.brand, chosen.mpn || chosen.article_number || sku].filter(Boolean).join(" ");
+      return {
+        rows: rows,
+        matchNote: "Compatible vehicles from " + label + " (OE " + numbers[index] + ").",
+        errorText: "",
+      };
+    }
+  }
+  if (direct && direct.unmapped) {
     return {
       rows: [],
       matchNote: "",
-      errorText: catalogueFailure(found, "Compatible vehicles could not be loaded"),
+      errorText: "This item is not linked to a catalogue article, so there are no compatible vehicles yet.",
     };
   }
-  const chosen = pickCandidate(candidates, item);
-  if (!chosen) {
-    return { rows: [], matchNote: "", errorText: "No compatible vehicles are linked to this item." };
-  }
-  const bySku = await get("/product-fitment?sku=" + encodeURIComponent(chosen.sku));
-  const rows = bySku && Array.isArray(bySku.fitments) ? bySku.fitments : [];
-  if (!rows.length) {
-    return {
-      rows: [],
-      matchNote: "",
-      errorText:
-        bySku && (bySku.status || bySku.error)
-          ? catalogueFailure(bySku, "Compatible vehicles could not be loaded")
-          : "No compatible vehicles are linked to this item.",
-    };
-  }
-  const via = chosen.discovery_only ? "OE reference" : chosen.match_label || "catalogue article";
-  const label = [chosen.brand, chosen.mpn || chosen.article_number || chosen.sku].filter(Boolean).join(" ");
-  return {
-    rows: rows,
-    matchNote: "Compatible vehicles from " + label + " (" + via + ").",
-    errorText: "",
-  };
+  return { rows: [], matchNote: "", errorText: "No compatible vehicles are linked to this item." };
+}
+
+export function vehiclesFromLabels(value) {
+  return parseReferenceList(value)
+    .map((label) => {
+      const parts = String(label)
+        .split("/")
+        .map((part) => part.trim());
+      const make = parts[0] || "";
+      const model = parts[1] || "";
+      const generation = parts[2] || "";
+      const engine = parts[3] || "";
+      return {
+        make_name: make,
+        model_name: model,
+        generation_name: generation,
+        engine_code: engine,
+        checkbox_label: label,
+        vehicle_key: label,
+      };
+    })
+    .filter((row) => row.make_name || row.checkbox_label);
 }
 
 export function applyVehicleScope(rows) {
