@@ -12,7 +12,7 @@ function closeAction() {
 
 function SearchAction() {
   return (
-    <s-admin-action heading="Vehicle" loading={false}>
+    <s-admin-action heading="Vehicle filter" loading={false}>
       <s-button slot="primary-action" onClick={closeAction}>
         Close
       </s-button>
