@@ -134,7 +134,7 @@ function catalogueTimeout(promise, ms) {
 
 /** Admin blocks resolve a relative app path and attach the session token. */
 export async function fetchAppCatalogue(path) {
-  const urls = ["api/ocean" + path, "https://fitment-manager.vercel.app/api/ocean" + path];
+  const urls = ["/api/ocean" + path, "https://fitment-manager.vercel.app/api/ocean" + path];
   let failure = { error: "network" };
   for (let i = 0; i < urls.length; i += 1) {
     try {
@@ -296,7 +296,7 @@ export function selectedVehicleIds(engines, engineId, mode) {
   return rows.map(keyOf).filter(Boolean);
 }
 
-export async function loadCatalogueRows(get, path, keys) {
+export async function loadCatalogueRows(get, path, keys, onPage) {
   const names = Array.isArray(keys) ? keys : [keys];
   const rows = [];
   const seen = {};
@@ -323,6 +323,7 @@ export async function loadCatalogueRows(get, path, keys) {
       seen[id] = true;
       rows.push(row);
     });
+    if (onPage && rows.length) onPage(rows.slice());
     if (!batch.length || (payload && payload.has_next === false)) break;
     const limit = Number(payload && payload.limit) || batch.length;
     offset += limit;
@@ -332,7 +333,7 @@ export async function loadCatalogueRows(get, path, keys) {
 }
 
 export async function postAppCatalogue(path, body) {
-  const urls = ["api/ocean" + path, "https://fitment-manager.vercel.app/api/ocean" + path];
+  const urls = ["/api/ocean" + path, "https://fitment-manager.vercel.app/api/ocean" + path];
   let failure = { ok: false, error: "network" };
   for (let i = 0; i < urls.length; i += 1) {
     try {
@@ -390,7 +391,7 @@ function linkFailure(payload) {
   return "This item could not be linked.";
 }
 
-export async function linkItemToVehicles(post, item, numeric, variantId, vehicleIds) {
+export async function linkItemToVehicles(post, item, numeric, variantId, vehicleIds, verification) {
   const ids = (vehicleIds || []).map((id) => String(id || "")).filter(Boolean);
   if (!ids.length) {
     return { ok: false, rows: [], added: 0, errorText: "Select a vehicle to link this item." };
@@ -400,7 +401,7 @@ export async function linkItemToVehicles(post, item, numeric, variantId, vehicle
     action: "add",
     vehicle_ids: ids,
     source: "manual",
-    verification_status: "UNVERIFIED",
+    verification_status: verification || "VERIFIED",
   });
   let payload = await post("/product-fitment", addBody);
   const unmapped = payload && payload.ok === false && (payload.error === "unmapped" || payload.unmapped === true);

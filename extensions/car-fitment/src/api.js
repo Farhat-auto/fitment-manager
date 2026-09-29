@@ -66,7 +66,7 @@ export async function publicCatalogueGet(path) {
 
 export async function catalogueGet(path) {
   try {
-    const res = await withTimeout(fetch("api/ocean" + path), 15000);
+    const res = await withTimeout(fetch("/api/ocean" + path), 25000);
     let data = {};
     try {
       data = await res.json();
@@ -78,6 +78,10 @@ export async function catalogueGet(path) {
       res.ok &&
       (Array.isArray(data.fitments) ||
         Array.isArray(data.makes) ||
+        Array.isArray(data.models) ||
+        Array.isArray(data.engines) ||
+        Array.isArray(data.types) ||
+        Array.isArray(data.generations) ||
         Array.isArray(data.results) ||
         data.unmapped === true ||
         data.ok === true)
@@ -113,6 +117,22 @@ export async function catalogueGet(path) {
 }
 
 export async function cataloguePost(path, body) {
+  try {
+    const res = await fetch("/api/ocean" + path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (err) {
+      data = {};
+    }
+    if (res.ok && data && typeof data === "object") return data;
+  } catch (err) {
+    // The admin runtime authenticates a root-relative app path. An absolute URL is the fallback.
+  }
   const headers = await authHeaders();
   const urls = catalogueUrls(path);
   for (let i = 0; i < urls.length; i += 1) {

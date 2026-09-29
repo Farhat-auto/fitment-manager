@@ -129,13 +129,13 @@ function linkStatus(result: { ok: boolean; added: number; rows: Row[]; errorText
   if (!result.ok) return result.errorText;
   if (result.added) {
     return (
-      "Linked " +
+      "Saved " +
       result.added +
       (result.added === 1 ? " vehicle" : " vehicles") +
-      " to this item. Fitment stays unverified until it is checked."
+      " on this item. Linked in Fitment Manager and on the storefront."
     );
   }
-  return "This vehicle is already linked to this item.";
+  return "Saved. This vehicle is already linked in Fitment Manager and on the storefront.";
 }
 
 export function VehicleBar() {
@@ -152,7 +152,7 @@ export function VehicleBar() {
   const [modelId, setModelId] = useState("");
   const [engineId, setEngineId] = useState("");
   const [mode, setMode] = useState(MODE_EXACT);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState("Loading manufacturers…");
   const [matchNote, setMatchNote] = useState("");
   const [linkNote, setLinkNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -160,12 +160,21 @@ export function VehicleBar() {
 
   useEffect(() => {
     let cancelled = false;
-    loadCatalogueRows((path: string) => fetchAppCatalogue(path), "/makes?has_vehicles=0", "makes").then((loaded) => {
+    loadCatalogueRows(
+      (path: string) => fetchAppCatalogue(path),
+      "/makes?has_vehicles=0",
+      "makes",
+      (rows: Row[]) => {
+        if (!cancelled) {
+          setMakes(rows);
+          setNote(rows.length + " manufacturers");
+        }
+      },
+    ).then((loaded) => {
       if (cancelled) return;
-      setMakes(loaded.rows || []);
-      if (!(loaded.rows || []).length) {
-        setNote(catalogueFailure(loaded.error, "Makes could not be loaded"));
-      }
+      const rows = loaded.rows || [];
+      setMakes(rows);
+      setNote(rows.length ? rows.length + " manufacturers" : catalogueFailure(loaded.error, "Makes could not be loaded"));
     });
     return () => {
       cancelled = true;
@@ -294,25 +303,39 @@ export function VehicleBar() {
     setLinkNote("");
   }
 
-  async function onLink() {
-    const ids = selectedVehicleIds(engines, engineId, mode);
+  async function saveVehicles(ids: string[]) {
     if (!ids.length) {
       setLinkNote("Select a vehicle to link this item.");
       return;
     }
     const current = itemRef.current;
     setBusy(true);
-    setLinkNote("Linking this item…");
+    setLinkNote("Saving this link…");
     const result = await linkItemToVehicles(
       (path: string, body: Row) => postAppCatalogue(path, body),
       current,
       current.numeric,
       current.variantId,
       ids,
+      "VERIFIED",
     );
     setBusy(false);
     setLinkNote(linkStatus(result));
     if (result.ok && result.rows.length) setSaved(result.rows);
+  }
+
+  function onEngine(value: string) {
+    setEngineId(value);
+    if (!value || busy) return;
+    const ids =
+      mode === MODE_MODEL
+        ? selectedVehicleIds(engines, value, MODE_MODEL)
+        : selectedVehicleIds(engines, value, mode);
+    void saveVehicles(ids);
+  }
+
+  function onLink() {
+    void saveVehicles(selectedVehicleIds(engines, engineId, mode));
   }
 
   const line = itemLine(item);
@@ -327,11 +350,11 @@ export function VehicleBar() {
         {item.oe.length ? <Text>{"OE " + item.oe.join(", ")}</Text> : null}
       </BlockStack>
       <Text fontWeight="bold">VEHICLE</Text>
-      <Text>Choose the manufacturer, model, and engine, then link this item.</Text>
+      {note ? <Text>{note}</Text> : null}
       <InlineStack gap="base" blockAlign="center">
         <Select
           label="Make"
-          placeholder="Make"
+          placeholder={makes.length ? "Make" : "Loading manufacturers…"}
           value={makeId}
           onChange={onMake}
           options={selectOptions(makes, (row) => String(row.name || row.title), (row) => String(row.id))}
@@ -349,9 +372,12 @@ export function VehicleBar() {
           placeholder="Engine"
           value={engineId}
           disabled={!modelId}
-          onChange={setEngineId}
+          onChange={onEngine}
           options={selectOptions(engines, catalogueEngineLabel, (row) => String(row.vehicle_key || row.vehicle_id || row.id))}
         />
+        <Button variant="primary" disabled={!canLink} onPress={onLink}>
+          {busy ? "Saving…" : "Save link"}
+        </Button>
         <Button variant="tertiary" onPress={onClear}>
           Clear
         </Button>
@@ -367,12 +393,8 @@ export function VehicleBar() {
           All for Engine
         </Button>
       </InlineStack>
-      <Button variant="primary" disabled={!canLink} onPress={onLink}>
-        {busy ? "Linking this item…" : "Link this item"}
-      </Button>
-      {note ? <Banner tone="warning" title={note} /> : null}
       {matchNote ? <Text>{matchNote}</Text> : null}
-      {linkNote ? <Banner tone={linkNote.indexOf("Linked ") === 0 ? "success" : "warning"} title={linkNote} /> : null}
+      {linkNote ? <Banner tone={linkNote.indexOf("Saved") === 0 ? "success" : "warning"} title={linkNote} /> : null}
       <Text fontWeight="bold">
         {saved.length ? "Compatible vehicles · " + saved.length : "Compatible vehicles"}
       </Text>

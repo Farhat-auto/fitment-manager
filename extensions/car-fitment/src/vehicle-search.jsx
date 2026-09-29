@@ -305,21 +305,22 @@ export function VehicleSearch() {
     setEngines(engineRows);
   }
 
-  async function onLink() {
+  async function onLink(chosen) {
     const current = itemRef.current;
-    const ids = selectedVehicleIds(engines, engineId, mode);
+    const ids = Array.isArray(chosen) ? chosen : selectedVehicleIds(engines, engineId, mode);
     if (!current || !ids.length) {
       setLinkNote("Select a vehicle to link this item.");
       return;
     }
     setBusy(true);
-    setLinkNote("Linking this item…");
+    setLinkNote("Saving this link…");
     const result = await linkItemToVehicles(
       (path, body) => postAppCatalogue(path, body),
       current,
       current.numericId,
       current.variantNumericId,
       ids,
+      "VERIFIED",
     );
     setBusy(false);
     if (!result.ok) {
@@ -330,12 +331,20 @@ export function VehicleSearch() {
     setSavedNote(result.rows.length ? "Compatible vehicles · " + result.rows.length : "");
     setLinkNote(
       result.added
-        ? "Linked " +
+        ? "Saved " +
             result.added +
             (result.added === 1 ? " vehicle" : " vehicles") +
-            " to this item. Fitment stays unverified until it is checked."
-        : "This vehicle is already linked to this item.",
+            " on this item. Linked in Fitment Manager and on the storefront."
+        : "Saved. This vehicle is already linked in Fitment Manager and on the storefront.",
     );
+  }
+
+  function onEngine(value) {
+    setEngineId(value);
+    if (!linked || !value || busy) return;
+    const ids = selectedVehicleIds(engines, value, mode);
+    if (!ids.length) return;
+    onLink(ids);
   }
 
   function onClear() {
@@ -470,7 +479,7 @@ export function VehicleSearch() {
           label="Engine"
           value={engineId}
           disabled={!modelId}
-          onChange={(event) => setEngineId(fieldValue(event))}
+          onChange={(event) => onEngine(fieldValue(event))}
         >
           <s-option value="">Engine</s-option>
           {engines.map((row) => (
@@ -479,6 +488,11 @@ export function VehicleSearch() {
             </s-option>
           ))}
         </s-select>
+        {linked ? (
+          <s-button variant="primary" disabled={!canLink} onClick={() => onLink()}>
+            {busy ? "Saving…" : "Save link"}
+          </s-button>
+        ) : null}
         <s-button variant="tertiary" onClick={onClear}>
           Clear
         </s-button>
@@ -494,13 +508,8 @@ export function VehicleSearch() {
           All for Engine
         </s-button>
       </s-stack>
-      {linked ? (
-        <s-button variant="primary" disabled={!canLink} onClick={onLink}>
-          {busy ? "Linking this item…" : "Link this item"}
-        </s-button>
-      ) : null}
       {note ? <s-banner tone="warning">{note}</s-banner> : null}
-      {linkNote ? <s-banner tone={linkNote.indexOf("Linked ") === 0 ? "success" : "warning"}>{linkNote}</s-banner> : null}
+      {linkNote ? <s-banner tone={linkNote.indexOf("Saved") === 0 ? "success" : "warning"}>{linkNote}</s-banner> : null}
       {linked ? <s-text type="strong">{savedNote || "Compatible vehicles"}</s-text> : null}
       {linked && !saved.length ? <s-text>This item is not linked to a vehicle yet.</s-text> : null}
       {contextLabel ? <s-banner tone="success">{contextLabel}</s-banner> : null}
